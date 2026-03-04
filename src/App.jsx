@@ -48,65 +48,67 @@ export default function BridgeDashboard() {
         </div>
       </div>
 
-      <div className="w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:24px_24px] py-12 px-4 md:px-12">
-        <div className="max-w-7xl mx-auto flex flex-wrap gap-y-24 gap-x-0 justify-start items-end">
+      <div className="w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:24px_24px] pt-28 pb-12 px-4 md:px-12">
+        <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
           {filteredData.map((row, idx) => {
             const isGirderHere = row['Girder_Location_Span_ID'] === row['Span ID'];
+            const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
+            // For >15 segments, expand pier width so bars are never hidden
+            const dynWidth = segCount > 15 ? Math.max(160, segCount * 6 + 50) : null;
             return (
-              <div key={idx} className="flex h-64 w-[12.5%] min-w-[140px] max-w-[180px] relative border-t border-slate-100 items-start">
+              <div
+                key={idx}
+                className="flex h-40 relative border-t border-slate-100 items-start"
+                style={dynWidth
+                  ? { width: `${dynWidth}px`, minWidth: `${dynWidth}px`, maxWidth: `${dynWidth}px` }
+                  : { width: '12.5%', minWidth: '140px', maxWidth: '180px' }}
+              >
+                {/* Segment Boxes - positioned above girder, anchored to pier unit */}
+                <div className="absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-50/20 rounded border border-dashed border-slate-200 min-h-[36px] items-center z-10">
+                  {Array.from({ length: segCount }).map((_, i) => {
+                    const sNum = String(i + 1).padStart(2, '0');
+                    const cS = row[`S${sNum}_Casting_Status`];
+                    const eS = row[`S${sNum}_Erection_Status`];
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
+                        className={`flex-1 max-w-[10px] min-w-[3px] h-4 border-[0.5px] cursor-pointer transition-all rounded-[0.5px] hover:scale-150 hover:z-30 ${getSegmentColor(cS, eS)}`}
+                        title={`Segment ${sNum}`}
+                      ></div>
+                    );
+                  })}
+                </div>
+
                 {/* 1. Pier Column Section (Fixed Left) */}
                 <div className="w-6 flex flex-col items-center relative h-full">
-                  {/* Pier ID label */}
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap z-20">
+                  {/* Pier ID label - raised to -top-20 to clear segment container */}
+                  <div className="absolute -top-20 left-1/2 -translate-x-1/2 whitespace-nowrap z-20">
                     <span className="text-[9px] font-black uppercase text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-sm">{row['Pier ID']}</span>
                   </div>
 
-                  {/* Substructure - Deck on top, column down */}
+                  {/* Substructure */}
                   <div className="flex flex-col items-center w-full">
-                    {/* Pier Cap (Top Deck part) */}
                     <div className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 ${row.PierCap_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'}`}></div>
-
-                    {/* Pier Column (Extends down) */}
-                    <div className={`w-4 h-28 border-x transition-colors ${row.Pier_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'} relative`}>
+                    <div className={`w-4 h-14 border-x transition-colors ${row.Pier_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'} relative`}>
                       <div className="absolute inset-y-0 left-0 w-[1.5px] bg-black/5"></div>
                     </div>
-
-                    {/* Foundation Base (Bottom) */}
                     <div className={`w-12 h-4 border rounded-b-[1px] transition-colors ${row.Foundation_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300 shadow-inner'}`}></div>
                   </div>
                 </div>
 
-                {/* 2. Span Section (Right of Pier - Top Aligned) */}
+                {/* 2. Span Section */}
                 <div className="flex-1 flex flex-col items-center relative h-full pt-1">
-                  {/* Span ID info - Bottom fixed */}
-                  <div className="absolute bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
                     <span className="text-[7px] font-black uppercase text-slate-400 tracking-widest bg-white/80 px-1 rounded shadow-sm">{row['Span ID']}</span>
                   </div>
-
-                  {/* Girder Line (Top Deck part) */}
+                  {/* Girder Line - unchanged */}
                   <div className={`h-2.5 w-full relative ${isGirderHere ? 'bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.4)]' : 'bg-slate-300'} border-x border-white/30 z-10 mt-[-4px]`}>
                     {isGirderHere && (
-                      <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-orange-500 text-white font-black text-[7px] rounded-full shadow-lg z-20 whitespace-nowrap border border-orange-400">
+                      <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-orange-500 text-white font-black text-[7px] rounded-full shadow-lg z-30 whitespace-nowrap border border-orange-400">
                         <Anchor size={8} /> GIRDER
                       </div>
                     )}
-                  </div>
-
-                  {/* Segment Boxes - Just below Girder deck */}
-                  <div className="flex flex-nowrap justify-center gap-[1px] mt-2 mb-1 w-[95%] bg-slate-50/20 p-1 rounded border border-dashed border-slate-200 min-h-[36px] items-center">
-                    {Array.from({ length: parseInt(row['No of Segments'] || row['No of Segment'] || 0) }).map((_, i) => {
-                      const sNum = String(i + 1).padStart(2, '0');
-                      const cS = row[`S${sNum}_Casting_Status`];
-                      const eS = row[`S${sNum}_Erection_Status`];
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
-                          className={`flex-1 max-w-[10px] min-w-[3px] h-4 border-[0.5px] cursor-pointer transition-all rounded-[0.5px] hover:scale-150 hover:z-30 ${getSegmentColor(cS, eS)}`}
-                          title={`Segment ${sNum}`}
-                        ></div>
-                      );
-                    })}
                   </div>
                 </div>
               </div>
@@ -131,7 +133,7 @@ export default function BridgeDashboard() {
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><HardHat size={12} /> Erection Status</p>
                   <div className="text-lg font-bold">{selected.data[`S${selected.id}_Erection_Status`]} ({selected.data[`S${selected.id}_Erection_Date`] || 'No Date'})</div>
                 </div>
-                <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-black">Close</button>
+                <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
               </div>
             </div>
           </div>

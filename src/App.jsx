@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat } from 'lucide-react';
+import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2 } from 'lucide-react';
 import "./App.css"
 const SHEET_URL = import.meta.env.VITE_SHEET_URL;
 
@@ -20,6 +20,42 @@ export default function BridgeDashboard() {
   };
 
   const filteredData = data.filter(row => row['Pier ID']?.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  // Determine modal header color based on type
+  const getModalHeaderColor = () => {
+    if (!selected) return 'bg-slate-700';
+    if (selected.type === 'segment') {
+      return selected.data[`S${selected.id}_Erection_Status`]?.toLowerCase() === 'completed'
+        ? 'bg-blue-500'
+        : 'bg-green-500';
+    }
+    // Foundation / Pier / PierCap
+    const statusKey = selected.type === 'foundation'
+      ? 'Foundation_Status'
+      : selected.type === 'pier'
+        ? 'Pier_Status'
+        : 'PierCap_Status';
+    return selected.data[statusKey]?.toLowerCase() === 'completed' ? 'bg-green-600' : 'bg-slate-500';
+  };
+
+  // Get display label for modal type
+  const getModalTitle = () => {
+    if (!selected) return '';
+    if (selected.type === 'segment') return `Segment ${selected.id}`;
+    if (selected.type === 'foundation') return 'Foundation';
+    if (selected.type === 'pier') return 'Pier';
+    if (selected.type === 'piercap') return 'Pier Cap';
+    return '';
+  };
+
+  // Get icon for modal type
+  const getModalIcon = () => {
+    if (!selected) return null;
+    if (selected.type === 'foundation') return <Anchor size={14} />;
+    if (selected.type === 'pier') return <Building2 size={14} />;
+    if (selected.type === 'piercap') return <Columns2 size={14} />;
+    return null;
+  };
 
   return (
     <div className="p-0 bg-white min-h-screen font-sans selection:bg-blue-100">
@@ -66,7 +102,7 @@ export default function BridgeDashboard() {
                 {/* Segment Boxes - positioned above girder, anchored to pier unit */}
                 <div className="absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-50/20 rounded border border-dashed border-slate-200 min-h-[36px] items-center z-10">
                   {Array.from({ length: segCount }).map((_, i) => {
-                    const sNum = String(i + 1).padStart(2, '0');
+                    const sNum = String(i + 1).padStart(2, '00');
                     const cS = row[`S${sNum}_Casting_Status`];
                     const eS = row[`S${sNum}_Erection_Status`];
                     return (
@@ -89,11 +125,26 @@ export default function BridgeDashboard() {
 
                   {/* Substructure */}
                   <div className="flex flex-col items-center w-full">
-                    <div className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 ${row.PierCap_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'}`}></div>
-                    <div className={`w-4 h-14 border-x transition-colors ${row.Pier_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'} relative`}>
+                    {/* Pier Cap */}
+                    <div
+                      className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 cursor-pointer hover:opacity-80 hover:scale-105 ${row.PierCap_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'}`}
+                      title="Click to view Pier Cap details"
+                      onClick={() => setSelected({ data: row, type: 'piercap' })}
+                    ></div>
+                    {/* Pier */}
+                    <div
+                      className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${row.Pier_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'} relative`}
+                      title="Click to view Pier details"
+                      onClick={() => setSelected({ data: row, type: 'pier' })}
+                    >
                       <div className="absolute inset-y-0 left-0 w-[1.5px] bg-black/5"></div>
                     </div>
-                    <div className={`w-12 h-4 border rounded-b-[1px] transition-colors ${row.Foundation_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300 shadow-inner'}`}></div>
+                    {/* Foundation */}
+                    <div
+                      className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${row.Foundation_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300 shadow-inner'}`}
+                      title="Click to view Foundation details"
+                      onClick={() => setSelected({ data: row, type: 'foundation' })}
+                    ></div>
                   </div>
                 </div>
 
@@ -120,21 +171,80 @@ export default function BridgeDashboard() {
         {selected && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 p-6">
             <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden">
-              <div className={`p-8 text-white ${selected.data[`S${selected.id}_Erection_Status`]?.toLowerCase() === 'completed' ? 'bg-blue-500' : 'bg-green-500'}`}>
-                <h3 className="text-3xl font-black">Segment {selected.id}</h3>
-                <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Span ID']}</p>
-              </div>
-              <div className="p-8 space-y-6">
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><Hammer size={12} /> Casting Status</p>
-                  <div className="text-lg font-bold">{selected.data[`S${selected.id}_Casting_Status`]} ({selected.data[`S${selected.id}_Casting_Date`] || 'No Date'})</div>
-                </div>
-                <div className="border-t pt-4">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><HardHat size={12} /> Erection Status</p>
-                  <div className="text-lg font-bold">{selected.data[`S${selected.id}_Erection_Status`]} ({selected.data[`S${selected.id}_Erection_Date`] || 'No Date'})</div>
-                </div>
-                <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
-              </div>
+
+              {/* ── SEGMENT modal ── */}
+              {selected.type === 'segment' && (
+                <>
+                  <div className={`p-8 text-white ${getModalHeaderColor()}`}>
+                    <h3 className="text-3xl font-black">Segment {selected.id}</h3>
+                    <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Span ID']}</p>
+                  </div>
+                  <div className="p-8 space-y-6">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><Hammer size={12} /> Casting Status</p>
+                      <div className="text-lg font-bold">{selected.data[`S${selected.id}_Casting_Status`]} ({selected.data[`S${selected.id}_Casting_Date`] || 'No Date'})</div>
+                    </div>
+                    <div className="border-t pt-4">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><HardHat size={12} /> Erection Status</p>
+                      <div className="text-lg font-bold">{selected.data[`S${selected.id}_Erection_Status`]} ({selected.data[`S${selected.id}_Erection_Date`] || 'No Date'})</div>
+                    </div>
+                    <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
+                  </div>
+                </>
+              )}
+
+              {/* ── FOUNDATION / PIER / PIER CAP modal ── */}
+              {(selected.type === 'foundation' || selected.type === 'pier' || selected.type === 'piercap') && (() => {
+                const typeMap = {
+                  foundation: {
+                    label: 'Foundation',
+                    statusKey: 'Foundation_Status',
+                    dateKey: 'Foundation_Completed_Date',
+                  },
+                  pier: {
+                    label: 'Pier',
+                    statusKey: 'Pier_Status',
+                    dateKey: 'Pier_Completed_Date',
+                  },
+                  piercap: {
+                    label: 'Pier Cap',
+                    statusKey: 'PierCap_Status',
+                    dateKey: 'PierCap_Completed_Date',
+                  },
+                };
+                const { label, statusKey, dateKey } = typeMap[selected.type];
+                const status = selected.data[statusKey];
+                const date = selected.data[dateKey];
+                const isCompleted = status?.toLowerCase() === 'completed';
+                return (
+                  <>
+                    <div className={`p-8 text-white ${isCompleted ? 'bg-green-600' : 'bg-slate-500'}`}>
+                      <h3 className="text-3xl font-black">{label}</h3>
+                      <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Pier ID']}</p>
+                    </div>
+                    <div className="p-8 space-y-6">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2">
+                          <CheckCircle2 size={12} /> Status
+                        </p>
+                        <div className={`text-lg font-bold ${isCompleted ? 'text-green-600' : 'text-slate-400'}`}>
+                          {status || 'Pending'}
+                        </div>
+                      </div>
+                      <div className="border-t pt-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2">
+                          <Calendar size={12} /> Completed Date
+                        </p>
+                        <div className="text-lg font-bold text-slate-700">
+                          {date || 'Not Yet Completed'}
+                        </div>
+                      </div>
+                      <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
+                    </div>
+                  </>
+                );
+              })()}
+
             </div>
           </div>
         )}

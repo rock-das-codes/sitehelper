@@ -14,9 +14,16 @@ export default function BridgeDashboard() {
   }, []);
 
   const getSegmentColor = (cStatus, eStatus) => {
-    if (eStatus?.toLowerCase() === 'completed') return 'bg-blue-500 border-blue-700'; // Erection: Blue
-    if (cStatus?.toLowerCase() === 'completed') return 'bg-green-500 border-green-700'; // Casting: Green
-    return 'bg-white border-slate-300 text-slate-300'; // Pending: Red
+    if (eStatus?.toLowerCase() === 'completed') return 'bg-green-500 border-green-700'; // Erection: Green
+    if (cStatus?.toLowerCase() === 'completed') return 'bg-blue-500 border-blue-700';   // Casting: Blue
+    return 'bg-white border-slate-300 text-slate-300'; // Pending
+  };
+
+  // Returns Tailwind classes for foundation/pier/piercap based on drawing + completion status
+  const getSubstructureColor = (status, drawingStatus) => {
+    if (drawingStatus?.toLowerCase() === 'not available') return 'bg-red-500 border-red-600';
+    if (status?.toLowerCase() === 'completed') return 'bg-green-500 border-green-600';
+    return 'bg-white border-slate-300';
   };
 
   const filteredData = data.filter(row => row['Pier ID']?.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -26,16 +33,16 @@ export default function BridgeDashboard() {
     if (!selected) return 'bg-slate-700';
     if (selected.type === 'segment') {
       return selected.data[`S${selected.id}_Erection_Status`]?.toLowerCase() === 'completed'
-        ? 'bg-blue-500'
-        : 'bg-green-500';
+        ? 'bg-green-500'
+        : 'bg-blue-500';
     }
     // Foundation / Pier / PierCap
-    const statusKey = selected.type === 'foundation'
-      ? 'Foundation_Status'
-      : selected.type === 'pier'
-        ? 'Pier_Status'
-        : 'PierCap_Status';
-    return selected.data[statusKey]?.toLowerCase() === 'completed' ? 'bg-green-600' : 'bg-slate-500';
+    const drawingKeyMap = { foundation: 'Foundation_Drawing_Status', pier: 'Pier_Drawing_Status', piercap: 'PierCap_Drawing_Status' };
+    const statusKeyMap = { foundation: 'Foundation_Status', pier: 'Pier_Status', piercap: 'PierCap_Status' };
+    const drawingSt = selected.data[drawingKeyMap[selected.type]];
+    const completeSt = selected.data[statusKeyMap[selected.type]];
+    if (drawingSt?.toLowerCase() === 'not available') return 'bg-red-500';
+    return completeSt?.toLowerCase() === 'completed' ? 'bg-green-600' : 'bg-slate-500';
   };
 
   // Get display label for modal type
@@ -76,10 +83,11 @@ export default function BridgeDashboard() {
             />
           </div>
           <div className="h-4 w-[1px] bg-slate-700"></div>
-          <div className="flex gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
-            <div className="w-3 h-3 bg-blue-500 rounded-sm"></div>
-            <div className="w-3 h-3 bg-slate-300 rounded-sm"></div>
+          <div className="flex items-center gap-3 text-[9px] font-bold tracking-widest">
+            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-green-500 rounded-sm"></div><span className="text-slate-300">ERECTED</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div><span className="text-slate-300">CAST</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded-sm"></div><span className="text-slate-300">NO DRAWING</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-slate-300 rounded-sm"></div><span className="text-slate-300">PENDING</span></div>
           </div>
         </div>
       </div>
@@ -127,13 +135,13 @@ export default function BridgeDashboard() {
                   <div className="flex flex-col items-center w-full">
                     {/* Pier Cap */}
                     <div
-                      className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 cursor-pointer hover:opacity-80 hover:scale-105 ${row.PierCap_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'}`}
+                      className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 cursor-pointer hover:opacity-80 hover:scale-105 ${getSubstructureColor(row.PierCap_Status, row.PierCap_Drawing_Status)}`}
                       title="Click to view Pier Cap details"
                       onClick={() => setSelected({ data: row, type: 'piercap' })}
                     ></div>
                     {/* Pier */}
                     <div
-                      className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${row.Pier_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300'} relative`}
+                      className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Pier_Status, row.Pier_Drawing_Status)} relative`}
                       title="Click to view Pier details"
                       onClick={() => setSelected({ data: row, type: 'pier' })}
                     >
@@ -141,7 +149,7 @@ export default function BridgeDashboard() {
                     </div>
                     {/* Foundation */}
                     <div
-                      className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${row.Foundation_Status?.toLowerCase() === 'completed' ? 'bg-green-500 border-green-600' : 'bg-white border-slate-300 shadow-inner'}`}
+                      className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Foundation_Status, row.Foundation_Drawing_Status)}`}
                       title="Click to view Foundation details"
                       onClick={() => setSelected({ data: row, type: 'foundation' })}
                     ></div>
@@ -153,6 +161,39 @@ export default function BridgeDashboard() {
                   <div className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
                     <span className="text-[7px] font-black uppercase text-slate-400 tracking-widest bg-white/80 px-1 rounded shadow-sm">{row['Span ID']}</span>
                   </div>
+
+                  {/* Double-sided arrow with span length & type — always visible */}
+                  <div className="absolute inset-x-0 flex flex-col items-center" style={{ bottom: '52px' }}>
+                    {/* Labels: only shown when columns exist in sheet */}
+                    {(row['Type'] || row['Span Length']) && (
+                      <div className="flex flex-col items-center gap-0.5 mb-1">
+                        {row['Type'] && (
+                          <span className="text-[7px] font-black uppercase tracking-widest text-slate-500 bg-white/90 px-1.5 py-0.5 rounded shadow-sm border border-slate-200">
+                            {row['Type']}
+                          </span>
+                        )}
+                        {row['Span Length'] && (
+                          <span className="text-[8px] font-black text-slate-600 bg-white/90 px-1.5 rounded">
+                            {row['Span Length']} m
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* Arrow — always rendered */}
+                    <div className="relative w-full flex items-center">
+                      {/* Left arrowhead */}
+                      <svg width="8" height="10" viewBox="0 0 8 10" className="flex-shrink-0 text-slate-400">
+                        <polygon points="8,0 0,5 8,10" fill="currentColor" />
+                      </svg>
+                      {/* Line */}
+                      <div className="flex-1 h-[1.5px] bg-slate-400"></div>
+                      {/* Right arrowhead */}
+                      <svg width="8" height="10" viewBox="0 0 8 10" className="flex-shrink-0 text-slate-400">
+                        <polygon points="0,0 8,5 0,10" fill="currentColor" />
+                      </svg>
+                    </div>
+                  </div>
+
                   {/* Girder Line - unchanged */}
                   <div className={`h-2.5 w-full relative ${isGirderHere ? 'bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.4)]' : 'bg-slate-300'} border-x border-white/30 z-10 mt-[-4px]`}>
                     {isGirderHere && (
@@ -196,29 +237,20 @@ export default function BridgeDashboard() {
               {/* ── FOUNDATION / PIER / PIER CAP modal ── */}
               {(selected.type === 'foundation' || selected.type === 'pier' || selected.type === 'piercap') && (() => {
                 const typeMap = {
-                  foundation: {
-                    label: 'Foundation',
-                    statusKey: 'Foundation_Status',
-                    dateKey: 'Foundation_Completed_Date',
-                  },
-                  pier: {
-                    label: 'Pier',
-                    statusKey: 'Pier_Status',
-                    dateKey: 'Pier_Completed_Date',
-                  },
-                  piercap: {
-                    label: 'Pier Cap',
-                    statusKey: 'PierCap_Status',
-                    dateKey: 'PierCap_Completed_Date',
-                  },
+                  foundation: { label: 'Foundation', statusKey: 'Foundation_Status', dateKey: 'Foundation_Completed_Date', drawingKey: 'Foundation_Drawing_Status' },
+                  pier: { label: 'Pier', statusKey: 'Pier_Status', dateKey: 'Pier_Completed_Date', drawingKey: 'Pier_Drawing_Status' },
+                  piercap: { label: 'Pier Cap', statusKey: 'PierCap_Status', dateKey: 'PierCap_Completed_Date', drawingKey: 'PierCap_Drawing_Status' },
                 };
-                const { label, statusKey, dateKey } = typeMap[selected.type];
+                const { label, statusKey, dateKey, drawingKey } = typeMap[selected.type];
                 const status = selected.data[statusKey];
                 const date = selected.data[dateKey];
+                const drawingStatus = selected.data[drawingKey];
                 const isCompleted = status?.toLowerCase() === 'completed';
+                const noDrawing = drawingStatus?.toLowerCase() === 'not available';
+                const headerBg = noDrawing ? 'bg-red-500' : isCompleted ? 'bg-green-600' : 'bg-slate-500';
                 return (
                   <>
-                    <div className={`p-8 text-white ${isCompleted ? 'bg-green-600' : 'bg-slate-500'}`}>
+                    <div className={`p-8 text-white ${headerBg}`}>
                       <h3 className="text-3xl font-black">{label}</h3>
                       <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Pier ID']}</p>
                     </div>
@@ -237,6 +269,14 @@ export default function BridgeDashboard() {
                         </p>
                         <div className="text-lg font-bold text-slate-700">
                           {date || 'Not Yet Completed'}
+                        </div>
+                      </div>
+                      <div className="border-t pt-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2">
+                          <CheckCircle2 size={12} /> Drawing Status
+                        </p>
+                        <div className={`text-lg font-bold ${noDrawing ? 'text-red-500' : 'text-green-600'}`}>
+                          {drawingStatus || '—'}
                         </div>
                       </div>
                       <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>

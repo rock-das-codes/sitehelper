@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
+    "html-to-image": "^1.11.13",
+    "html2pdf.js": "^0.14.0",
+    "jspdf": "^4.2.0",
     "lucide-react": "^0.575.0",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",

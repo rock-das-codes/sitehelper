@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer } from 'lucide-react';
-import { toPng } from 'html-to-image';
+import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3 } from 'lucide-react';
+
+import { toCanvas, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import "./App.css"
-const SHEET_URL = import.meta.env.VITE_SHEET_URL;
+const SECTION_URLS = {
+  S1: import.meta.env.VITE_SHEET_URL_S1,
+  S2: import.meta.env.VITE_SHEET_URL_S2,
+  S3: import.meta.env.VITE_SHEET_URL_S3,
+};
+
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
@@ -41,10 +47,35 @@ export default function BridgeDashboard() {
   const [selected, setSelected] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [activeSection, setActiveSection] = useState("S1");
+  const [showStats, setShowStats] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
+
+  const [isLoading, setIsLoading] = useState(false);
+
 
   useEffect(() => {
-    Papa.parse(SHEET_URL, { download: true, header: true, skipEmptyLines: true, complete: (results) => setData(results.data) });
-  }, []);
+    const url = SECTION_URLS[activeSection];
+    if (url) {
+      setIsLoading(true);
+      Papa.parse(url, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          setData(results.data);
+          setIsLoading(false);
+        },
+        error: (err) => {
+          console.error("Parsing error:", err);
+          setIsLoading(false);
+        }
+      });
+    } else {
+      setData([]);
+    }
+  }, [activeSection]);
+
 
   const isInSelectedRange = (dStr) => {
     if (!dateRange.from || !dateRange.to) return true;
@@ -140,7 +171,7 @@ export default function BridgeDashboard() {
 
       if (pierId && !uniquePiers.has(pierId)) {
         uniquePiers.add(pierId);
-        
+
         summary.foundation.planned += 1;
         if (row.Foundation_Status?.toLowerCase() === 'completed') {
           if (dateRange.from && dateRange.to) {
@@ -178,58 +209,84 @@ export default function BridgeDashboard() {
 
     return summary;
   };
+  
+  const handleGirderSelect = (spanId) => {
+    const element = document.getElementById(`span-${spanId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.style.outline = "4px solid #f97316";
+      element.style.outlineOffset = "8px";
+      element.style.borderRadius = "8px";
+      element.style.transition = "outline 0.3s ease";
+      setTimeout(() => {
+        element.style.outline = "none";
+      }, 3000);
+    }
+  };
+
 
   const summary = getSummary();
 
   const handleExportPDF = async () => {
     const element = document.getElementById('pdf-content');
     if (!element) return;
-    
+
     setIsExporting(true);
-    
+    setExportProgress("Preparing layout...");
+
     try {
-      // Use html-to-image to bypass html2canvas CSS parsing restrictions with Tailwind v4
-      const dataUrl = await toPng(element, { 
-        quality: 1.0, 
-        pixelRatio: 3, // Increased resolution significantly
+      // Let UI update first (important)
+      await new Promise((r) => setTimeout(r, 100));
+
+      setExportProgress("Rendering image...");
+
+      const dataUrl = await toPng(element, {
+        quality: 0.95,
+        pixelRatio: 12, // 🔥 BIG FIX (was 2 → huge lag)
         backgroundColor: '#ffffff',
-        style: {
-          transform: 'scale(1)',
-          transformOrigin: 'top left',
-          width: '1600px', // Force desktop width for consistent layout and high-res capture
-        },
-        width: 1600
+        cacheBust: true,
       });
-      
+
+      setExportProgress("Generating PDF...");
+
       const pdf = new jsPDF('landscape', 'mm', 'a3');
+
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      
+
       const imgProps = pdf.getImageProperties(dataUrl);
-      const renderWidth = pdfWidth; 
+      const renderWidth = pdfWidth;
       const renderHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
+
       let heightLeft = renderHeight;
       let position = 0;
-      
-      // Add first page
+
       pdf.addImage(dataUrl, 'PNG', 0, position, renderWidth, renderHeight);
       heightLeft -= pdfHeight;
 
-      // Add subsequent pages if the content overruns one A3 page
+      let pageCount = 1;
+
       while (heightLeft > 0) {
-        position = heightLeft - renderHeight; // Move the image up to show the next chunk
+        setExportProgress(`Adding page ${++pageCount}...`);
+
+        position = heightLeft - renderHeight;
         pdf.addPage();
         pdf.addImage(dataUrl, 'PNG', 0, position, renderWidth, renderHeight);
         heightLeft -= pdfHeight;
       }
 
-      pdf.save(`bridge-status-${new Date().toISOString().slice(0,10)}.pdf`);
+      setExportProgress("Finalizing PDF...");
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      pdf.save(`bridge-status-${new Date().toISOString().slice(0, 10)}.pdf`);
+
     } catch (err) {
       console.error('Error exporting PDF:', err);
-      alert('Failed to generate PDF. See console for details.');
+      alert('Failed to generate PDF. See console.');
     } finally {
       setIsExporting(false);
+      setExportProgress("");
     }
   };
 
@@ -270,30 +327,123 @@ export default function BridgeDashboard() {
   };
 
   return (
-    <div className="p-0 bg-white min-h-screen font-sans selection:bg-blue-100">
+    <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100">
+
       {/* Schematic Header */}
-      <div className="w-full bg-slate-900 text-white px-6 py-3 flex justify-between items-center sticky top-0 z-50 shadow-2xl border-b border-slate-700">
-        <div className="flex items-center gap-6">
-          <div>
-            <h1 className="text-xs font-black tracking-[0.2em] uppercase text-white/90 whitespace-nowrap leading-none">Progress Schematic</h1>
-            <p className="text-[9px] font-bold text-blue-400 tracking-widest mt-1 whitespace-nowrap leading-none">DASHBOARD v2.0</p>
-          </div>
+      <div className="w-full bg-slate-900 text-white sticky top-0 z-50 shadow-2xl border-b border-slate-700">
+        <div className="px-4 lg:px-6 py-3 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
           
-          {/* Compact Summary Table */}
-          <div className="overflow-hidden bg-slate-800 rounded border border-slate-700 shadow-inner flex-shrink-0">
-            <table className="text-left text-[7px] border-collapse text-slate-300 w-[220px]">
+          {/* Top Bar: Title + Mobile Actions */}
+          <div className="flex justify-between items-center w-full lg:w-auto">
+            <div>
+              <h1 className="text-[10px] lg:text-xs font-black tracking-[0.2em] uppercase text-white/90 whitespace-nowrap leading-none">Progress Schematic</h1>
+              <p className="text-[8px] lg:text-[9px] font-bold text-blue-400 tracking-widest mt-1 whitespace-nowrap leading-none">DASHBOARD v2.0</p>
+            </div>
+            
+            <div className="flex items-center gap-2 lg:hidden">
+              <button 
+                onClick={() => setShowStats(!showStats)}
+                className={`p-2 rounded-lg transition-colors ${showStats ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                title="Toggle Stats"
+              >
+                <BarChart3 size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row lg:items-center gap-4 w-full lg:w-auto">
+            {/* Selectors Group */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Section Selector */}
+              <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1">Data Section</label>
+                <select
+                  value={activeSection}
+                  onChange={(e) => setActiveSection(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-blue-500 transition-colors cursor-pointer appearance-none min-w-[100px] w-full"
+                  style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
+                >
+                  <option value="S1">SECTION 1</option>
+                  <option value="S2">SECTION 2</option>
+                  <option value="S3">SECTION 3</option>
+                </select>
+              </div>
+
+              {/* Girder Selector */}
+              <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1">Navigate to LG</label>
+                <select
+                  onChange={(e) => handleGirderSelect(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-orange-500 transition-colors cursor-pointer appearance-none min-w-[120px] w-full"
+                  style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23fb923c\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
+                >
+                  <option value="">SELECT GIRDER...</option>
+                  {data.filter(row => row['Girder_Location_Span_ID'] === row['Span ID']).map((row, i) => (
+                    <option key={i} value={row['Span ID']}>
+                      {row['Span ID']} ({row['Pier ID']})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Filters Group */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 px-2 py-1.5 rounded flex-grow sm:flex-grow-0">
+                <Calendar size={12} className="text-slate-500" />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-[75px] appearance-none"
+                    value={dateRange.from}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                  />
+                  <span className="text-[8px] text-slate-600">→</span>
+                  <input
+                    type="date"
+                    className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-[75px] appearance-none"
+                    value={dateRange.to}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                  />
+                </div>
+                {(dateRange.from || dateRange.to) && (
+                  <button
+                    onClick={() => setDateRange({ from: "", to: "" })}
+                    className="text-[8px] font-black text-blue-400 hover:text-white uppercase ml-1"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <div className="relative group flex-grow sm:flex-grow-0 min-w-[150px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={12} />
+                <input
+                  type="text"
+                  placeholder="SEARCH PIER..."
+                  className="bg-slate-800/50 border border-slate-700 pl-8 pr-3 py-1.5 rounded text-[8px] font-bold tracking-widest focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none w-full transition-all"
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Compact Summary Table - hidden on mobile unless showStats is true */}
+          <div className={`${showStats ? 'block' : 'hidden lg:block'} overflow-hidden bg-slate-800 rounded border border-slate-700 shadow-inner flex-shrink-0 w-full lg:w-auto mt-2 lg:mt-0`}>
+            <table className="text-left text-[7px] border-collapse text-slate-300 w-full lg:w-[220px]">
+
               <thead className="bg-[#e4b025] text-slate-900 font-bold tracking-wider capitalize">
                 <tr>
                   <th className="px-1 py-0.5 border-r border-slate-700/50">Desc</th>
                   <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">Plan</th>
                   <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">Achv</th>
                   <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">FTM</th>
-                  <th className="px-1 py-0.5 text-center">Prev</th>
+                  <th className="px-1 py-0.5 text-center">Previous Day</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 <tr className="hover:bg-slate-700/50 transition-colors">
-                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Found.</td>
+                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Foundation</td>
                   <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.foundation.planned || ''}</td>
                   <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.foundation.achieved || ''}</td>
                   <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.foundation.ftm || ''}</td>
@@ -307,7 +457,7 @@ export default function BridgeDashboard() {
                   <td className="px-1 py-[1px] text-center">{summary.pier.prevDay || ''}</td>
                 </tr>
                 <tr className="hover:bg-slate-700/50 transition-colors">
-                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Cap</td>
+                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Pier Cap</td>
                   <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pierCap.planned || ''}</td>
                   <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.pierCap.achieved || ''}</td>
                   <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pierCap.ftm || ''}</td>
@@ -329,86 +479,73 @@ export default function BridgeDashboard() {
             </table>
           </div>
         </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 px-2 py-1 rounded">
-            <Calendar size={12} className="text-slate-500" />
-            <div className="flex items-center gap-1">
-              <input 
-                type="date" 
-                className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-20 appearance-none"
-                value={dateRange.from}
-                onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-              />
-              <span className="text-[8px] text-slate-600">→</span>
-              <input 
-                type="date" 
-                className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-20 appearance-none"
-                value={dateRange.to}
-                onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-              />
-            </div>
-            {(dateRange.from || dateRange.to) && (
-              <button 
-                onClick={() => setDateRange({ from: "", to: "" })}
-                className="text-[8px] font-black text-blue-400 hover:text-white uppercase ml-1"
-              >
-                ×
-              </button>
-            )}
-          </div>
-
-          <div className="relative group flex-shrink-0">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={12} />
-            <input
-              type="text"
-              placeholder="SEARCH PIER..."
-              className="bg-slate-800/50 border border-slate-700 pl-8 pr-3 py-1.5 rounded text-[8px] font-bold tracking-widest focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none w-36 transition-all"
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <div className="h-6 w-[1px] bg-slate-700 flex-shrink-0"></div>
-
-          <div className="flex items-center gap-3 text-[7px] font-bold tracking-tighter text-slate-400 flex-shrink-0">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-green-500 rounded-sm"></div><span>ERECTED</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-blue-500 rounded-sm"></div><span>CAST</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-1.5 border border-red-500 rounded-sm"></div><span className="text-red-400/80">NO DWG</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-slate-700 border border-slate-600 rounded-sm"></div><span>PENDING</span></div>
-          </div>
-        </div>
       </div>
 
       {/* Floating Print / Export Button */}
-      <button 
+      <button
         onClick={handleExportPDF}
         disabled={isExporting}
         title="Print PDF"
-        className={`fixed bottom-8 right-8 z-50 p-4 rounded-full shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center text-white ${
-          isExporting ? 'bg-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30'
-        }`}
+        className={`fixed bottom-8 right-8 z-50 p-4 rounded-full shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center text-white ${isExporting
+          ? 'bg-slate-600 cursor-not-allowed'
+          : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30'
+          }`}
       >
-        {isExporting ? <Loader2 size={24} className="animate-spin" /> : <Printer size={24} />}
+        {isExporting ? (
+          <div className="flex flex-col items-center">
+            <Loader2 size={24} className="animate-spin" />
+            <span className="text-[10px] mt-1 whitespace-nowrap">
+              {exportProgress}
+            </span>
+          </div>
+        ) : (
+          <Printer size={24} />
+        )}
       </button>
 
       <div id="pdf-content" className="w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:24px_24px] pt-16 pb-12 px-4 md:px-12 mt-12">
-        <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
-          {filteredData.map((row, idx) => {
+        {isLoading ? (
+          <div className="w-full flex flex-col items-center justify-center py-40">
+            <Loader2 size={48} className="text-indigo-600 animate-spin mb-4" />
+            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Loading Section Data...</p>
+          </div>
+        ) : !SECTION_URLS[activeSection] ? (
+          <div className="w-full flex flex-col items-center justify-center py-40 text-center px-6">
+            <div className="bg-amber-50 border border-amber-200 p-8 rounded-3xl max-w-md shadow-sm">
+              <FileDown size={48} className="text-amber-500 mx-auto mb-4" />
+              <h2 className="text-xl font-black text-slate-800 mb-2 uppercase">Missing Data URL</h2>
+              <p className="text-sm text-slate-600 mb-6">The CSV URL for <strong>Section {activeSection.slice(1)}</strong> has not been added to your <code>.env</code> file yet.</p>
+              <div className="bg-white p-4 rounded-xl border border-amber-100 text-left">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Instructions:</p>
+                <ol className="text-xs text-slate-600 space-y-2 list-decimal ml-4">
+                  <li>Open your Google Sheet.</li>
+                  <li>Go to <b>File &gt; Share &gt; Publish to web</b>.</li>
+                  <li>Select the tab for this section and choose <b>CSV</b> format.</li>
+                  <li>Add the URL to <code>VITE_SHEET_URL_{activeSection}</code> in your <code>.env</code> file.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
+            {filteredData.map((row, idx) => {
+
             const isGirderHere = row['Girder_Location_Span_ID'] === row['Span ID'];
             const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
-            
+
             // Adjust width limit so it displays 3-4 spans horizontally
             const dynWidth = Math.max(280, segCount * 8 + 50);
 
             return (
               <div
                 key={idx}
-                className="flex h-40 relative border-t border-slate-100 items-start"
-                style={{ 
-                  width: '25%', 
-                  minWidth: `${dynWidth}px`, 
-                  maxWidth: `${Math.max(350, dynWidth)}px`, 
-                  pageBreakInside: 'avoid' 
+                id={`span-${row['Span ID']}`}
+                className="flex h-40 relative border-t border-slate-100 items-start scroll-mt-40 transition-all duration-500"
+                style={{
+                  width: '25%',
+                  minWidth: `${dynWidth}px`,
+                  maxWidth: `${Math.max(350, dynWidth)}px`,
+                  pageBreakInside: 'avoid'
                 }}
               >
                 {/* Segment Boxes - positioned above girder, anchored to pier unit */}
@@ -510,7 +647,9 @@ export default function BridgeDashboard() {
               </div>
             );
           })}
-        </div>
+          </div>
+        )}
+
 
         {/* Modal Popup */}
         {selected && (

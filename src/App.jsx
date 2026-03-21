@@ -11,6 +11,11 @@ const SECTION_URLS = {
   S3: import.meta.env.VITE_SHEET_URL_S3,
 };
 
+const isDrawingUnavailable = (status) => {
+  if (!status) return false;
+  const s = status.toString().toLowerCase().trim();
+  return s === "not available" || s === "n/a" || s === "na" || s === "unavailable";
+};
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
@@ -58,7 +63,9 @@ export default function BridgeDashboard() {
     const url = SECTION_URLS[activeSection];
     if (url) {
       setIsLoading(true);
-      Papa.parse(url, {
+      const cacheBuster = `&t=${new Date().getTime()}`;
+      const finalUrl = url.includes('?') ? `${url}${cacheBuster}` : `${url}?${cacheBuster}`;
+      Papa.parse(finalUrl, {
         download: true,
         header: true,
         skipEmptyLines: true,
@@ -110,7 +117,7 @@ export default function BridgeDashboard() {
 
   // Returns Tailwind classes for foundation/pier/piercap based on drawing + completion status
   const getSubstructureColor = (status, drawingStatus, compDate) => {
-    if (drawingStatus?.toLowerCase() === 'not available') return 'bg-red-500 border-red-600';
+    if (isDrawingUnavailable(drawingStatus)) return 'bg-red-500 border-red-600';
     if (status?.toLowerCase() === 'completed') {
       if (dateRange.from && dateRange.to) {
         if (isInSelectedRange(compDate)) return 'bg-green-500 border-green-600';
@@ -299,11 +306,11 @@ export default function BridgeDashboard() {
         : 'bg-blue-500';
     }
     // Foundation / Pier / PierCap
-    const drawingKeyMap = { foundation: 'Foundation_Drawing_Status', pier: 'Pier_Drawing_Status', piercap: 'PierCap_Drawing_Status' };
+    const drawingKeyMap = { foundation: 'Foundation Drawing Status', pier: 'Pier Drawing Status', piercap: 'Pier Cap Drawing Status' };
     const statusKeyMap = { foundation: 'Foundation_Status', pier: 'Pier_Status', piercap: 'PierCap_Status' };
     const drawingSt = selected.data[drawingKeyMap[selected.type]];
     const completeSt = selected.data[statusKeyMap[selected.type]];
-    if (drawingSt?.toLowerCase() === 'not available') return 'bg-red-500';
+    if (isDrawingUnavailable(drawingSt)) return 'bg-red-500';
     return completeSt?.toLowerCase() === 'completed' ? 'bg-green-600' : 'bg-slate-500';
   };
 
@@ -378,7 +385,7 @@ export default function BridgeDashboard() {
                   style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23fb923c\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
                 >
                   <option value="">SELECT GIRDER...</option>
-                  {data.filter(row => row['Girder_Location_Span_ID'] === row['Span ID']).map((row, i) => (
+                  {data.filter(row => row['Girder_Location_Span_ID'] && row['Girder_Location_Span_ID'].trim() !== "" && row['Girder_Location_Span_ID'] === row['Span ID']).map((row, i) => (
                     <option key={i} value={row['Span ID']}>
                       {row['Span ID']} ({row['Pier ID']})
                     </option>
@@ -530,7 +537,8 @@ export default function BridgeDashboard() {
           <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
             {filteredData.map((row, idx) => {
 
-            const isGirderHere = row['Girder_Location_Span_ID'] === row['Span ID'];
+            const girderLoc = row['Girder_Location_Span_ID'];
+            const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
             const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
 
             // Adjust width limit so it displays 3-4 spans horizontally
@@ -549,16 +557,17 @@ export default function BridgeDashboard() {
                 }}
               >
                 {/* Segment Boxes - positioned above girder, anchored to pier unit */}
-                <div className="absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-50/20 rounded border border-dashed border-slate-200 min-h-[36px] items-center z-10">
+                <div className={`absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-100/50 rounded-md border border-dashed border-slate-300 min-h-[40px] items-center z-10 shadow-sm`}>
                   {Array.from({ length: segCount }).map((_, i) => {
                     const sNum = String(i + 1).padStart(2, '00');
                     const cS = row[`S${sNum}_Casting_Status`];
                     const eS = row[`S${sNum}_Erection_Status`];
+                    const sColor = getSegmentColor(cS, eS, row[`S${sNum}_Erection_Date`]);
                     return (
                       <div
                         key={i}
                         onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
-                        className={`flex-1 max-w-[10px] min-w-[3px] h-4 border-[0.5px] cursor-pointer transition-all rounded-[0.5px] hover:scale-150 hover:z-30 ${getSegmentColor(cS, eS, row[`S${sNum}_Erection_Date`])}`}
+                        className={`flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
                         title={`Segment ${sNum}`}
                       ></div>
                     );
@@ -576,13 +585,13 @@ export default function BridgeDashboard() {
                   <div className="flex flex-col items-center w-full">
                     {/* Pier Cap */}
                     <div
-                      className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 cursor-pointer hover:opacity-80 hover:scale-105 ${getSubstructureColor(row.PierCap_Status, row.PierCap_Drawing_Status, row.PierCap_Completed_Date)}`}
+                      className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 cursor-pointer hover:opacity-80 hover:scale-105 ${getSubstructureColor(row.PierCap_Status, row['Pier Cap Drawing Status'], row.PierCap_Completed_Date)}`}
                       title="Click to view Pier Cap details"
                       onClick={() => setSelected({ data: row, type: 'piercap' })}
                     ></div>
                     {/* Pier */}
                     <div
-                      className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Pier_Status, row.Pier_Drawing_Status, row.Pier_Completed_Date)} relative`}
+                      className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Pier_Status, row['Pier Drawing Status'], row.Pier_Completed_Date)} relative`}
                       title="Click to view Pier details"
                       onClick={() => setSelected({ data: row, type: 'pier' })}
                     >
@@ -590,7 +599,7 @@ export default function BridgeDashboard() {
                     </div>
                     {/* Foundation */}
                     <div
-                      className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Foundation_Status, row.Foundation_Drawing_Status, row.Foundation_Completed_Date)}`}
+                      className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Foundation_Status, row['Foundation Drawing Status'], row.Foundation_Completed_Date)}`}
                       title="Click to view Foundation details"
                       onClick={() => setSelected({ data: row, type: 'foundation' })}
                     ></div>
@@ -680,16 +689,16 @@ export default function BridgeDashboard() {
               {/* ── FOUNDATION / PIER / PIER CAP modal ── */}
               {(selected.type === 'foundation' || selected.type === 'pier' || selected.type === 'piercap') && (() => {
                 const typeMap = {
-                  foundation: { label: 'Foundation', statusKey: 'Foundation_Status', dateKey: 'Foundation_Completed_Date', drawingKey: 'Foundation_Drawing_Status' },
-                  pier: { label: 'Pier', statusKey: 'Pier_Status', dateKey: 'Pier_Completed_Date', drawingKey: 'Pier_Drawing_Status' },
-                  piercap: { label: 'Pier Cap', statusKey: 'PierCap_Status', dateKey: 'PierCap_Completed_Date', drawingKey: 'PierCap_Drawing_Status' },
+                  foundation: { label: 'Foundation', statusKey: 'Foundation_Status', dateKey: 'Foundation_Completed_Date', drawingKey: 'Foundation Drawing Status' },
+                  pier: { label: 'Pier', statusKey: 'Pier_Status', dateKey: 'Pier_Completed_Date', drawingKey: 'Pier Drawing Status' },
+                  piercap: { label: 'Pier Cap', statusKey: 'PierCap_Status', dateKey: 'PierCap_Completed_Date', drawingKey: 'Pier Cap Drawing Status' },
                 };
                 const { label, statusKey, dateKey, drawingKey } = typeMap[selected.type];
                 const status = selected.data[statusKey];
                 const date = selected.data[dateKey];
                 const drawingStatus = selected.data[drawingKey];
                 const isCompleted = status?.toLowerCase() === 'completed';
-                const noDrawing = drawingStatus?.toLowerCase() === 'not available';
+                const noDrawing = isDrawingUnavailable(drawingStatus);
                 const headerBg = noDrawing ? 'bg-red-500' : isCompleted ? 'bg-green-600' : 'bg-slate-500';
                 return (
                   <>

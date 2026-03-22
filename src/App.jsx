@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3 } from 'lucide-react';
 
-import { toCanvas, toPng } from 'html-to-image';
+import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import "./App.css"
 const SECTION_URLS = {

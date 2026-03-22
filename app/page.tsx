@@ -1,0 +1,504 @@
+"use client";
+
+import React, { useState, useEffect, Suspense } from 'react';
+import Papa from 'papaparse';
+import { useSearchParams } from 'next/navigation';
+import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3 } from 'lucide-react';
+
+const SECTION_URLS: Record<string, string | undefined> = {
+  S1: process.env.NEXT_PUBLIC_SHEET_URL_S1,
+  S2: process.env.NEXT_PUBLIC_SHEET_URL_S2,
+  S3: process.env.NEXT_PUBLIC_SHEET_URL_S3,
+};
+
+const isDrawingUnavailable = (status: any) => {
+  if (!status) return false;
+  const s = status.toString().toLowerCase().trim();
+  return s === "not available" || s === "n/a" || s === "na" || s === "unavailable";
+};
+
+const parseDate = (dStr: string) => {
+  if (!dStr) return null;
+  let parts = dStr.trim().split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[2].length === 4) { // DD-MM-YYYY
+      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+    } else if (parts[0].length === 4) { // YYYY-MM-DD
+      return new Date(dStr);
+    }
+  }
+  const d = new Date(dStr);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const isCurrentMonth = (dStr: string) => {
+  const d = parseDate(dStr);
+  if (!d) return false;
+  const now = new Date();
+  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+};
+
+const isPreviousDay = (dStr: string) => {
+  const d = parseDate(dStr);
+  if (!d) return false;
+  const prev = new Date();
+  prev.setDate(prev.getDate() - 1);
+  return d.getDate() === prev.getDate() && d.getMonth() === prev.getMonth() && d.getFullYear() === prev.getFullYear();
+};
+
+function DashboardContent() {
+  const searchParams = useSearchParams();
+  const isPrintMode = searchParams.get('print') === 'true';
+
+  const [data, setData] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || "");
+  const [selected, setSelected] = useState<any>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [dateRange, setDateRange] = useState({ 
+    from: searchParams.get('from') || "", 
+    to: searchParams.get('to') || "" 
+  });
+  const [activeSection, setActiveSection] = useState(searchParams.get('section') || "S1");
+  const [showStats, setShowStats] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const url = SECTION_URLS[activeSection];
+    if (url) {
+      setIsLoading(true);
+      const cacheBuster = `&t=${new Date().getTime()}`;
+      const finalUrl = url.includes('?') ? `${url}${cacheBuster}` : `${url}?${cacheBuster}`;
+      Papa.parse(finalUrl, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          setData(results.data);
+          setIsLoading(false);
+        },
+        error: (err) => {
+          console.error("Parsing error:", err);
+          setIsLoading(false);
+        }
+      });
+    } else {
+      setData([]);
+    }
+  }, [activeSection]);
+
+  const isInSelectedRange = (dStr: string) => {
+    if (!dateRange.from || !dateRange.to) return true;
+    const d = parseDate(dStr);
+    if (!d) return false;
+    const from = new Date(dateRange.from);
+    const to = new Date(dateRange.to);
+    to.setHours(23, 59, 59, 999);
+    return d >= from && d <= to;
+  };
+
+  const isBeforeRange = (dStr: string) => {
+    if (!dateRange.from || !dateRange.to) return false;
+    const d = parseDate(dStr);
+    if (!d) return false;
+    const from = new Date(dateRange.from);
+    return d < from;
+  };
+
+  const getSegmentColor = (cStatus: string, eStatus: string, eDate: string) => {
+    if (eStatus?.toLowerCase() === 'completed') {
+      if (dateRange.from && dateRange.to) {
+        if (isInSelectedRange(eDate)) return 'bg-green-500 border-green-700';
+        if (isBeforeRange(eDate)) return 'bg-green-200 border-green-300 opacity-60';
+        return 'bg-white border-slate-300 text-slate-300';
+      }
+      return 'bg-green-500 border-green-700';
+    }
+    if (cStatus?.toLowerCase() === 'completed') return 'bg-blue-500 border-blue-700';
+    return 'bg-white border-slate-300 text-slate-300';
+  };
+
+  const getSubstructureColor = (status: string, drawingStatus: string, compDate: string) => {
+    if (isDrawingUnavailable(drawingStatus)) return 'bg-red-500 border-red-600';
+    if (status?.toLowerCase() === 'completed') {
+      if (dateRange.from && dateRange.to) {
+        if (isInSelectedRange(compDate)) return 'bg-green-500 border-green-600';
+        if (isBeforeRange(compDate)) return 'bg-green-100 border-green-200 opacity-60';
+        return 'bg-white border-slate-300';
+      }
+      return 'bg-green-500 border-green-600';
+    }
+    return 'bg-white border-slate-300';
+  };
+
+  const filteredData = data.filter(row => row['Pier ID']?.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const getSummary = () => {
+    const summary: any = {
+      foundation: { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+      pier: { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+      pierCap: { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+      superstructure: {
+        'SBS': { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+        'FSLM': { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+        'CEM': { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+        'GAD': { planned: 0, achieved: 0, ftm: 0, prevDay: 0 },
+      }
+    };
+
+    const uniquePiers = new Set();
+    filteredData.forEach(row => {
+      const pierId = row['Pier ID'];
+      const typeStr = row['Type'];
+      const type = typeStr ? typeStr.toUpperCase().trim() : null;
+      const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
+
+      if (type && summary.superstructure[type]) {
+        summary.superstructure[type].planned += segCount;
+        for (let i = 1; i <= segCount; i++) {
+          const sNum = String(i).padStart(2, '00');
+          const erectionStatus = row[`S${sNum}_Erection_Status`];
+          const erectionDate = row[`S${sNum}_Erection_Date`];
+
+          if (erectionStatus?.toLowerCase() === 'completed') {
+            if (dateRange.from && dateRange.to) {
+              if (isInSelectedRange(erectionDate)) summary.superstructure[type].achieved += 1;
+            } else {
+              summary.superstructure[type].achieved += 1;
+            }
+          }
+          if (isCurrentMonth(erectionDate)) summary.superstructure[type].ftm += 1;
+          if (isPreviousDay(erectionDate)) summary.superstructure[type].prevDay += 1;
+        }
+      }
+
+      if (pierId && !uniquePiers.has(pierId)) {
+        uniquePiers.add(pierId);
+        summary.foundation.planned += 1;
+        if (row.Foundation_Status?.toLowerCase() === 'completed') {
+          if (dateRange.from && dateRange.to) {
+            if (isInSelectedRange(row.Foundation_Completed_Date)) summary.foundation.achieved += 1;
+          } else {
+            summary.foundation.achieved += 1;
+          }
+        }
+        if (isCurrentMonth(row.Foundation_Completed_Date)) summary.foundation.ftm += 1;
+        if (isPreviousDay(row.Foundation_Completed_Date)) summary.foundation.prevDay += 1;
+
+        summary.pier.planned += 1;
+        if (row.Pier_Status?.toLowerCase() === 'completed') {
+          if (dateRange.from && dateRange.to) {
+            if (isInSelectedRange(row.Pier_Completed_Date)) summary.pier.achieved += 1;
+          } else {
+            summary.pier.achieved += 1;
+          }
+        }
+        if (isCurrentMonth(row.Pier_Completed_Date)) summary.pier.ftm += 1;
+        if (isPreviousDay(row.Pier_Completed_Date)) summary.pier.prevDay += 1;
+
+        summary.pierCap.planned += 1;
+        if (row.PierCap_Status?.toLowerCase() === 'completed') {
+          if (dateRange.from && dateRange.to) {
+            if (isInSelectedRange(row.PierCap_Completed_Date)) summary.pierCap.achieved += 1;
+          } else {
+            summary.pierCap.achieved += 1;
+          }
+        }
+        if (isCurrentMonth(row.PierCap_Completed_Date)) summary.pierCap.ftm += 1;
+        if (isPreviousDay(row.PierCap_Completed_Date)) summary.pierCap.prevDay += 1;
+      }
+    });
+    return summary;
+  };
+
+  const handleGirderSelect = (spanId: string) => {
+    const element = document.getElementById(`span-${spanId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.style.outline = "4px solid #f97316";
+      element.style.outlineOffset = "8px";
+      element.style.borderRadius = "8px";
+      element.style.transition = "outline 0.3s ease";
+      setTimeout(() => { element.style.outline = "none"; }, 3000);
+    }
+  };
+
+  const summary = getSummary();
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams({
+        section: activeSection,
+        from: dateRange.from,
+        to: dateRange.to,
+        search: searchTerm,
+      });
+      window.open(`/api/pdf?${params.toString()}`, '_blank');
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const getModalHeaderColor = () => {
+    if (!selected) return 'bg-slate-700';
+    if (selected.type === 'segment') {
+      return selected.data[`S${selected.id}_Erection_Status`]?.toLowerCase() === 'completed' ? 'bg-green-500' : 'bg-blue-500';
+    }
+    const drawingKeyMap: any = { foundation: 'Foundation Drawing Status', pier: 'Pier Drawing Status', piercap: 'Pier Cap Drawing Status' };
+    const statusKeyMap: any = { foundation: 'Foundation_Status', pier: 'Pier_Status', piercap: 'PierCap_Status' };
+    const drawingSt = selected.data[drawingKeyMap[selected.type]];
+    const completeSt = selected.data[statusKeyMap[selected.type]];
+    if (isDrawingUnavailable(drawingSt)) return 'bg-red-500';
+    return completeSt?.toLowerCase() === 'completed' ? 'bg-green-600' : 'bg-slate-500';
+  };
+
+  return (
+    <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100">
+      {!isPrintMode && (
+        <div className="w-full bg-slate-900 text-white sticky top-0 z-50 shadow-2xl border-b border-slate-700">
+          <div className="px-4 lg:px-6 py-3 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+            <div className="flex justify-between items-center w-full lg:w-auto">
+              <div>
+                <h1 className="text-[10px] lg:text-xs font-black tracking-[0.2em] uppercase text-white/90 whitespace-nowrap leading-none">Progress Schematic</h1>
+                <p style={{ color: 'red' }} className="text-[8px] lg:text-[9px] font-bold text-blue-400 tracking-widest mt-1 whitespace-nowrap leading-none">DASHBOARD v2.0</p>
+              </div>
+              <div className="flex items-center gap-2 lg:hidden">
+                <button onClick={() => setShowStats(!showStats)} className={`p-2 rounded-lg transition-colors ${showStats ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`} title="Toggle Stats">
+                  <BarChart3 size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col md:flex-row lg:items-center gap-4 w-full lg:w-auto">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                  <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1">Data Section</label>
+                  <select value={activeSection} onChange={(e) => setActiveSection(e.target.value)} className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-blue-500 transition-colors cursor-pointer min-w-[100px] w-full">
+                    <option value="S1">SECTION 1</option>
+                    <option value="S2">SECTION 2</option>
+                    <option value="S3">SECTION 3</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                  <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1">Navigate to LG</label>
+                  <select onChange={(e) => handleGirderSelect(e.target.value)} className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-orange-500 transition-colors cursor-pointer min-w-[120px] w-full">
+                    <option value="">SELECT GIRDER...</option>
+                    {data.filter(row => row['Girder_Location_Span_ID'] && row['Girder_Location_Span_ID'].trim() !== "" && row['Girder_Location_Span_ID'] === row['Span ID']).map((row, i) => (
+                      <option key={i} value={row['Span ID']}>{row['Span ID']} ({row['Pier ID']})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 px-2 py-1.5 rounded flex-grow sm:flex-grow-0">
+                  <Calendar size={12} className="text-slate-500" />
+                  <div className="flex items-center gap-1">
+                    <input type="date" className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-[75px]" value={dateRange.from} onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))} />
+                    <span className="text-[8px] text-slate-600">→</span>
+                    <input type="date" className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-[75px]" value={dateRange.to} onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))} />
+                  </div>
+                  {(dateRange.from || dateRange.to) && <button onClick={() => setDateRange({ from: "", to: "" })} className="text-[8px] font-black text-blue-400 hover:text-white uppercase ml-1">×</button>}
+                </div>
+                <div className="relative group flex-grow sm:flex-grow-0 min-w-[150px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={12} />
+                  <input type="text" value={searchTerm} placeholder="SEARCH PIER..." className="bg-slate-800/50 border border-slate-700 pl-8 pr-3 py-1.5 rounded text-[8px] font-bold tracking-widest focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none w-full transition-all" onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <div className={`${showStats ? 'block' : 'hidden lg:block'} overflow-hidden bg-slate-800 rounded border border-slate-700 shadow-inner flex-shrink-0 w-full lg:w-auto mt-2 lg:mt-0`}>
+              <table className="text-left text-[7px] border-collapse text-slate-300 w-full lg:w-[220px]">
+                <thead className="bg-[#e4b025] text-slate-900 font-bold tracking-wider capitalize">
+                  <tr>
+                    <th className="px-1 py-0.5 border-r border-slate-700/50">Desc</th>
+                    <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">Plan</th>
+                    <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">Achv</th>
+                    <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">FTM</th>
+                    <th className="px-1 py-0.5 text-center">Previous Day</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50">
+                  <tr className="hover:bg-slate-700/50 transition-colors">
+                    <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Foundation</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.foundation.planned || ''}</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.foundation.achieved || ''}</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.foundation.ftm || ''}</td>
+                    <td className="px-1 py-[1px] text-center">{summary.foundation.prevDay || ''}</td>
+                  </tr>
+                  <tr className="hover:bg-slate-700/50 transition-colors bg-slate-800/30">
+                    <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Pier</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pier.planned || ''}</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.pier.achieved || ''}</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pier.ftm || ''}</td>
+                    <td className="px-1 py-[1px] text-center">{summary.pier.prevDay || ''}</td>
+                  </tr>
+                  <tr className="hover:bg-slate-700/50 transition-colors">
+                    <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Pier Cap</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pierCap.planned || ''}</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.pierCap.achieved || ''}</td>
+                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pierCap.ftm || ''}</td>
+                    <td className="px-1 py-[1px] text-center">{summary.pierCap.prevDay || ''}</td>
+                  </tr>
+                  <tr className="bg-slate-700 text-slate-100 font-bold"><td colSpan={5} className="px-1 py-0.5 text-center uppercase tracking-widest text-[5px]">Superstructure</td></tr>
+                  {Object.keys(summary.superstructure).map((type, i) => (
+                    <tr key={type} className={`hover:bg-slate-700/50 transition-colors ${i % 2 === 0 ? 'bg-slate-800/30' : ''}`}>
+                      <td className="px-1 py-[1px] font-medium border-r border-slate-700/50">{type}</td>
+                      <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.superstructure[type].planned || ''}</td>
+                      <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.superstructure[type].achieved || ''}</td>
+                      <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.superstructure[type].ftm || ''}</td>
+                      <td className="px-1 py-[1px] text-center">{summary.superstructure[type].prevDay || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isPrintMode && (
+        <button onClick={handleExportPDF} disabled={isExporting} title="Print PDF" className={`fixed bottom-8 right-8 z-50 p-4 rounded-full shadow-2xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center text-white ${isExporting ? 'bg-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30'}`}>
+          {isExporting ? <Loader2 size={24} className="animate-spin" /> : <Printer size={24} />}
+        </button>
+      )}
+
+      <div id="pdf-content" className={`w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:24px_24px] ${isPrintMode ? 'pt-32' : 'pt-16'} pb-12 px-4 md:px-12 mt-4`}>
+        {isPrintMode && (
+          <div className="mb-32 text-center">
+            <h1 className="text-4xl font-black uppercase tracking-[0.2em] text-slate-900">Bridge Progress Schematic</h1>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-[0.5em] mt-4">Section {activeSection} • Dashboard v2.0</p>
+            {dateRange.from && dateRange.to && <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mt-2">{dateRange.from} TO {dateRange.to}</p>}
+          </div>
+        )}
+        {isLoading ? (
+          <div className="w-full flex flex-col items-center justify-center py-40">
+            <Loader2 size={48} className="text-indigo-600 animate-spin mb-4" />
+            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Loading Section Data...</p>
+          </div>
+        ) : (
+          <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
+            {filteredData.map((row, idx) => {
+              const girderLoc = row['Girder_Location_Span_ID'];
+              const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
+              const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || "0");
+              const dynWidth = Math.max(280, segCount * 8 + 50);
+              return (
+                <div key={idx} id={`span-${row['Span ID']}`} className="flex h-40 relative border-t border-slate-100 items-start scroll-mt-40 transition-all duration-500" style={{ width: '25%', minWidth: `${dynWidth}px`, maxWidth: `${Math.max(350, dynWidth)}px` }}>
+                  <div className="absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-100/50 rounded-md border border-dashed border-slate-300 min-h-[40px] items-center z-10 shadow-sm">
+                    {Array.from({ length: segCount }).map((_, i) => {
+                      const sNum = String(i + 1).padStart(2, '00');
+                      const sColor = getSegmentColor(row[`S${sNum}_Casting_Status`], row[`S${sNum}_Erection_Status`], row[`S${sNum}_Erection_Date`]);
+                      return (
+                        <div key={i} onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })} className={`flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm hover:scale-110 hover:z-30 ${sColor}`}></div>
+                      );
+                    })}
+                  </div>
+                  <div className="w-6 flex flex-col items-center relative h-full">
+                    <div className="absolute -top-20 left-1/2 -translate-x-1/2 whitespace-nowrap z-20">
+                      <span className="text-[9px] font-black uppercase text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-sm">{row['Pier ID']}</span>
+                    </div>
+                    <div className="flex flex-col items-center w-full">
+                      <div className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] z-10 cursor-pointer hover:opacity-80 ${getSubstructureColor(row.PierCap_Status, row['Pier Cap Drawing Status'], row.PierCap_Completed_Date)}`} onClick={() => setSelected({ data: row, type: 'piercap' })}></div>
+                      <div className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Pier_Status, row['Pier Drawing Status'], row.Pier_Completed_Date)}`} onClick={() => setSelected({ data: row, type: 'pier' })}></div>
+                      <div className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Foundation_Status, row['Foundation Drawing Status'], row.Foundation_Completed_Date)}`} onClick={() => setSelected({ data: row, type: 'foundation' })}></div>
+                    </div>
+                  </div>
+                  <div className="flex-1 flex flex-col items-center relative h-full pt-1">
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                      <span className="text-[7px] font-black uppercase text-slate-400 tracking-widest bg-white/80 px-1 rounded shadow-sm">{row['Span ID']}</span>
+                    </div>
+                    <div className="absolute inset-x-0 flex flex-col items-center" style={{ bottom: '52px' }}>
+                      {(row['Type'] || row['Span Length']) && (
+                        <div className="flex flex-col items-center gap-0.5 mb-1">
+                          {row['Type'] && <span className="text-[7px] font-black uppercase tracking-widest text-slate-500 bg-white/90 px-1.5 py-0.5 rounded shadow-sm border border-slate-200">{row['Type']}</span>}
+                          {row['Span Length'] && <span className="text-[8px] font-black text-slate-600 bg-white/90 px-1.5 rounded">{row['Span Length']} m</span>}
+                        </div>
+                      )}
+                      <div className="relative w-full flex items-center">
+                        <svg width="8" height="10" viewBox="0 0 8 10" className="flex-shrink-0 text-slate-400"><polygon points="8,0 0,5 8,10" fill="currentColor" /></svg>
+                        <div className="flex-1 h-[1.5px] bg-slate-400"></div>
+                        <svg width="8" height="10" viewBox="0 0 8 10" className="flex-shrink-0 text-slate-400"><polygon points="0,0 8,5 0,10" fill="currentColor" /></svg>
+                      </div>
+                    </div>
+                    <div className={`h-2.5 w-full relative ${isGirderHere ? 'bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.4)]' : 'bg-slate-300'} border-x border-white/30 z-10 mt-[-4px]`}>
+                      {isGirderHere && <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-orange-500 text-white font-black text-[7px] rounded-full shadow-lg z-30 whitespace-nowrap border border-orange-400"><Anchor size={8} /> GIRDER</div>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 p-6">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden">
+            {selected.type === 'segment' ? (
+              <>
+                <div className={`p-8 text-white ${getModalHeaderColor()}`}>
+                  <h3 className="text-3xl font-black">Segment {selected.id}</h3>
+                  <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Span ID']}</p>
+                </div>
+                <div className="p-8 space-y-6">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><Hammer size={12} /> Casting Status</p>
+                    <div className="text-lg font-bold">{selected.data[`S${selected.id}_Casting_Status`]} ({selected.data[`S${selected.id}_Casting_Date`] || 'No Date'})</div>
+                  </div>
+                  <div className="border-t pt-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><HardHat size={12} /> Erection Status</p>
+                    <div className="text-lg font-bold">{selected.data[`S${selected.id}_Erection_Status`]} ({selected.data[`S${selected.id}_Erection_Date`] || 'No Date'})</div>
+                  </div>
+                  <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
+                </div>
+              </>
+            ) : (
+              (() => {
+                const typeMap: any = {
+                  foundation: { label: 'Foundation', statusKey: 'Foundation_Status', dateKey: 'Foundation_Completed_Date', drawingKey: 'Foundation Drawing Status' },
+                  pier: { label: 'Pier', statusKey: 'Pier_Status', dateKey: 'Pier_Completed_Date', drawingKey: 'Pier Drawing Status' },
+                  piercap: { label: 'Pier Cap', statusKey: 'PierCap_Status', dateKey: 'PierCap_Completed_Date', drawingKey: 'Pier Cap Drawing Status' },
+                };
+                const { label, statusKey, dateKey, drawingKey } = typeMap[selected.type];
+                const noDrawing = isDrawingUnavailable(selected.data[drawingKey]);
+                const isCompleted = selected.data[statusKey]?.toLowerCase() === 'completed';
+                const headerBg = noDrawing ? 'bg-red-500' : isCompleted ? 'bg-green-600' : 'bg-slate-500';
+                return (
+                  <>
+                    <div className={`p-8 text-white ${headerBg}`}>
+                      <h3 className="text-3xl font-black">{label}</h3>
+                      <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Pier ID']}</p>
+                    </div>
+                    <div className="p-8 space-y-6">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><CheckCircle2 size={12} /> Status</p>
+                        <div className={`text-lg font-bold ${isCompleted ? 'text-green-600' : 'text-slate-400'}`}>{selected.data[statusKey] || 'Pending'}</div>
+                      </div>
+                      <div className="border-t pt-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><Calendar size={12} /> Completed Date</p>
+                        <div className="text-lg font-bold text-slate-700">{selected.data[dateKey] || 'Not Yet Completed'}</div>
+                      </div>
+                      <div className="border-t pt-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><CheckCircle2 size={12} /> Drawing Status</p>
+                        <div className={`text-lg font-bold ${noDrawing ? 'text-red-500' : 'text-green-600'}`}>{selected.data[drawingKey] || '—'}</div>
+                      </div>
+                      <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
+                    </div>
+                  </>
+                );
+              })()
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function BridgeDashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Loading Dashboard...</div>}>
+      <DashboardContent />
+    </Suspense>
+  );
+}

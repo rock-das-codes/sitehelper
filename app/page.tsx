@@ -227,13 +227,16 @@ function DashboardContent() {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      const params = new URLSearchParams({
-        section: activeSection,
-        from: dateRange.from,
-        to: dateRange.to,
-        search: searchTerm,
-      });
-      window.open(`/api/pdf?${params.toString()}`, '_blank');
+      // @ts-ignore
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        // @ts-ignore
+        const result = await window.electronAPI.exportPDF(`bridge-status-${activeSection}.pdf`);
+        if (!result.success && result.error !== 'Cancelled') {
+          alert('Failed to generate PDF: ' + result.error);
+        }
+      } else {
+        alert('PDF Generation is currently only supported in the Desktop Application.');
+      }
     } catch (err) {
       console.error('Error exporting PDF:', err);
     } finally {

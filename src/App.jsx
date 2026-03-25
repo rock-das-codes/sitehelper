@@ -6,9 +6,9 @@ import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import "./App.css"
 const SECTION_URLS = {
-  S1: import.meta.env.VITE_SHEET_URL_S1,
-  S2: import.meta.env.VITE_SHEET_URL_S2,
-  S3: import.meta.env.VITE_SHEET_URL_S3,
+  S1: process.env.NEXT_PUBLIC_SHEET_URL_S1,
+  S2: process.env.NEXT_PUBLIC_SHEET_URL_S2,
+  S3: process.env.NEXT_PUBLIC_SHEET_URL_S3,
 };
 
 const isDrawingUnavailable = (status) => {

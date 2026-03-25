@@ -9,6 +9,7 @@ const SECTION_URLS = {
   S1: import.meta.env.VITE_SHEET_URL_S1,
   S2: import.meta.env.VITE_SHEET_URL_S2,
   S3: import.meta.env.VITE_SHEET_URL_S3,
+  S4: import.meta.env.VITE_SHEET_URL_S4,
 };
 
 const isDrawingUnavailable = (status) => {
@@ -373,6 +374,7 @@ export default function BridgeDashboard() {
                   <option value="S1">SECTION 1</option>
                   <option value="S2">SECTION 2</option>
                   <option value="S3">SECTION 3</option>
+                  <option value="S4">SECTION 4</option>
                 </select>
               </div>
 

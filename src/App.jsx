@@ -130,6 +130,19 @@ export default function BridgeDashboard() {
     return 'bg-white border-slate-300';
   };
 
+  const getSubstructureFillStroke = (status, drawingStatus, compDate) => {
+    if (isDrawingUnavailable(drawingStatus)) return 'fill-red-500 stroke-red-600';
+    if (status?.toLowerCase() === 'completed') {
+      if (dateRange.from && dateRange.to) {
+        if (isInSelectedRange(compDate)) return 'fill-green-500 stroke-green-600';
+        if (isBeforeRange(compDate)) return 'fill-green-100 stroke-green-200 opacity-60';
+        return 'fill-white stroke-slate-300';
+      }
+      return 'fill-green-500 stroke-green-600';
+    }
+    return 'fill-white stroke-slate-300';
+  };
+
   const filteredData = data.filter(row => row['Pier ID']?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const getSummary = () => {
@@ -577,7 +590,7 @@ export default function BridgeDashboard() {
                 </div>
 
                 {/* 1. Pier Column Section (Fixed Left) */}
-                <div className="w-6 flex flex-col items-center relative h-full">
+                <div className="w-6 flex flex-col items-center relative h-full z-20">
                   {/* Pier ID label - raised to -top-20 to clear segment container */}
                   <div className="absolute -top-20 left-1/2 -translate-x-1/2 whitespace-nowrap z-20">
                     <span className="text-[9px] font-black uppercase text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-sm">{row['Pier ID']}</span>
@@ -586,11 +599,14 @@ export default function BridgeDashboard() {
                   {/* Substructure */}
                   <div className="flex flex-col items-center w-full">
                     {/* Pier Cap */}
-                    <div
-                      className={`w-[140%] h-2.5 border-x border-t rounded-t-[1px] transition-colors z-10 cursor-pointer hover:opacity-80 hover:scale-105 ${getSubstructureColor(row.PierCap_Status, row['Pier Cap Drawing Status'], row.PierCap_Completed_Date)}`}
+                    <svg
+                      width="44" height="14" viewBox="0 0 44 14"
+                      className={`z-10 cursor-pointer hover:opacity-80 hover:scale-105 transition-colors ${getSubstructureFillStroke(row.PierCap_Status, row['Pier Cap Drawing Status'], row.PierCap_Completed_Date)}`}
                       title="Click to view Pier Cap details"
                       onClick={() => setSelected({ data: row, type: 'piercap' })}
-                    ></div>
+                    >
+                      <path d="M 1.5 1.5 L 42.5 1.5 L 42.5 4.5 L 29.5 12.5 L 14.5 12.5 L 1.5 4.5 Z" strokeWidth={1} strokeLinejoin="round" />
+                    </svg>
                     {/* Pier */}
                     <div
                       className={`w-4 h-14 border-x transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Pier_Status, row['Pier Drawing Status'], row.Pier_Completed_Date)} relative`}
@@ -600,11 +616,14 @@ export default function BridgeDashboard() {
                       <div className="absolute inset-y-0 left-0 w-[1.5px] bg-black/5"></div>
                     </div>
                     {/* Foundation */}
-                    <div
-                      className={`w-12 h-4 border rounded-b-[1px] transition-colors cursor-pointer hover:opacity-80 ${getSubstructureColor(row.Foundation_Status, row['Foundation Drawing Status'], row.Foundation_Completed_Date)}`}
+                    <svg
+                      width="50" height="18" viewBox="0 0 50 18"
+                      className={`cursor-pointer hover:opacity-80 hover:scale-105 transition-colors ${getSubstructureFillStroke(row.Foundation_Status, row['Foundation Drawing Status'], row.Foundation_Completed_Date)}`}
                       title="Click to view Foundation details"
                       onClick={() => setSelected({ data: row, type: 'foundation' })}
-                    ></div>
+                    >
+                      <path d="M 17.5 1.5 L 32.5 1.5 L 48.5 8.5 L 48.5 16.5 L 1.5 16.5 L 1.5 8.5 Z" strokeWidth={1} strokeLinejoin="round" />
+                    </svg>
                   </div>
                 </div>
 

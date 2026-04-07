@@ -20,16 +20,60 @@ const isDrawingUnavailable = (status) => {
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
-  let parts = dStr.trim().split(/[-/]/);
+  const s = dStr.trim();
+  
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const parts = s.split('-');
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  }
+
+  const parts = s.split(/[-/.]/);
   if (parts.length === 3) {
-    if (parts[2].length === 4) { // DD-MM-YYYY
-      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-    } else if (parts[0].length === 4) { // YYYY-MM-DD
-      return new Date(dStr);
+    let p0 = parseInt(parts[0], 10);
+    let p1 = parseInt(parts[1], 10);
+    let p2 = parts[2];
+    
+    if (!isNaN(p0) && !isNaN(p1)) {
+      if (p2.length === 4) {
+        let year = parseInt(p2, 10);
+        let day = p0;
+        let month = p1;
+        if (month > 12) {
+          day = p1;
+          month = p0;
+        }
+        return new Date(year, month - 1, day);
+      } else if (p2.length === 2 && !isNaN(parseInt(p2, 10))) {
+        let year = 2000 + parseInt(p2, 10);
+        let day = p0;
+        let month = p1;
+        if (month > 12) {
+          day = p1;
+          month = p0;
+        }
+        return new Date(year, month - 1, day);
+      }
+    } else if (parts[0].length === 4) {
+      let year = parseInt(parts[0], 10);
+      let month = parseInt(parts[1], 10);
+      let day = parseInt(parts[2], 10);
+      return new Date(year, month - 1, day);
     }
   }
-  const d = new Date(dStr);
-  return isNaN(d) ? null : d;
+
+  const d = new Date(s);
+  if (!isNaN(d)) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  if (/^\d+$/.test(s)) {
+    const serial = parseInt(s, 10);
+    const excelEpoch = new Date(1899, 11, 30);
+    const dateFromExcel = new Date(excelEpoch.getTime() + serial * 86400000);
+    return new Date(dateFromExcel.getFullYear(), dateFromExcel.getMonth(), dateFromExcel.getDate());
+  }
+  
+  return null;
 };
 
 const isCurrentMonth = (dStr) => {
@@ -89,9 +133,10 @@ export default function BridgeDashboard() {
     if (!dateRange.from || !dateRange.to) return true;
     const d = parseDate(dStr);
     if (!d) return false;
-    const from = new Date(dateRange.from);
-    const to = new Date(dateRange.to);
-    to.setHours(23, 59, 59, 999);
+    const [fy, fm, fd] = dateRange.from.split('-');
+    const from = new Date(parseInt(fy, 10), parseInt(fm, 10) - 1, parseInt(fd, 10), 0, 0, 0);
+    const [ty, tm, td] = dateRange.to.split('-');
+    const to = new Date(parseInt(ty, 10), parseInt(tm, 10) - 1, parseInt(td, 10), 23, 59, 59, 999);
     return d >= from && d <= to;
   };
 
@@ -99,7 +144,8 @@ export default function BridgeDashboard() {
     if (!dateRange.from || !dateRange.to) return false;
     const d = parseDate(dStr);
     if (!d) return false;
-    const from = new Date(dateRange.from);
+    const [fy, fm, fd] = dateRange.from.split('-');
+    const from = new Date(parseInt(fy, 10), parseInt(fm, 10) - 1, parseInt(fd, 10), 0, 0, 0);
     return d < from;
   };
 

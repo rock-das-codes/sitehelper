@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3 } from 'lucide-react';
+import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3, ArrowRight, ArrowLeft } from 'lucide-react';
 
 import { toCanvas, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -548,12 +548,39 @@ export default function BridgeDashboard() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : (() => {
+          // --- LG Prediction Logic ---
+          let predictedSpanId = null;
+          let lgDirection = null;
+          const girderRow = filteredData.find(r => {
+            const loc = r['Girder_Location_Span_ID'];
+            return loc && loc.trim() !== '' && loc === r['Span ID'];
+          });
+          if (girderRow) {
+            const type = girderRow['Type']?.toUpperCase().trim();
+            if (type === 'SBS' || type === 'FSLM') {
+              const girderIdx = filteredData.indexOf(girderRow);
+              const direction = (girderRow['LG_Movement_Direction'] || '').trim().toLowerCase();
+              lgDirection = direction;
+              const spanOffset = type === 'SBS' ? 5 : 40;
+              
+              if (direction === 'right') {
+                const predIdx = girderIdx + spanOffset;
+                if (predIdx < filteredData.length) predictedSpanId = filteredData[predIdx]['Span ID'];
+              } else if (direction === 'left') {
+                const predIdx = girderIdx - spanOffset;
+                if (predIdx >= 0) predictedSpanId = filteredData[predIdx]['Span ID'];
+              }
+            }
+          }
+          // --- End LG Prediction ---
+          return (
           <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
             {filteredData.map((row, idx) => {
 
             const girderLoc = row['Girder_Location_Span_ID'];
             const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
+            const isPredictedLG = predictedSpanId && row['Span ID'] === predictedSpanId;
             const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
 
             // Adjust width limit so it displays 3-4 spans horizontally
@@ -573,18 +600,47 @@ export default function BridgeDashboard() {
               >
                 {/* Segment Boxes - positioned above girder, anchored to pier unit */}
                 <div className={`absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-100/50 rounded-md border border-dashed border-slate-300 min-h-[40px] items-center z-10 shadow-sm`}>
+                  {/* Arrow Above Segment Box */}
+                  {isGirderHere && lgDirection && (
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center justify-center bg-white rounded-full p-[2px] shadow-sm border border-slate-200 z-50">
+                      {lgDirection === 'left' ? <ArrowLeft size={16} strokeWidth={3} className="text-orange-500" /> : <ArrowRight size={16} strokeWidth={3} className="text-orange-500" />}
+                    </div>
+                  )}
                   {Array.from({ length: segCount }).map((_, i) => {
                     const sNum = String(i + 1).padStart(2, '00');
                     const cS = row[`S${sNum}_Casting_Status`];
                     const eS = row[`S${sNum}_Erection_Status`];
                     const sColor = getSegmentColor(cS, eS, row[`S${sNum}_Erection_Date`]);
+                    
+                    let isReadyForErection = false;
+                    const typeStr = row['Type']?.toUpperCase().trim();
+                    if (typeStr === 'SBS' || typeStr === 'FSLM') {
+                      if (cS?.toLowerCase() === 'completed' && eS?.toLowerCase() !== 'completed') {
+                        const cDate = parseDate(row[`S${sNum}_Casting_Date`]);
+                        if (cDate) {
+                          const diffDays = (new Date() - cDate) / (1000 * 60 * 60 * 24);
+                          const requiredDays = typeStr === 'SBS' ? 14 : 10;
+                          if (diffDays > requiredDays) {
+                            isReadyForErection = true;
+                          }
+                        }
+                      }
+                    }
+
                     return (
                       <div
                         key={i}
                         onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
-                        className={`flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
+                        className={`relative flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
                         title={`Segment ${sNum}`}
-                      ></div>
+                      >
+                        {isReadyForErection && (
+                          <div 
+                            className="absolute -top-2 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-yellow-400 rounded-full border-[0.5px] border-yellow-600 z-40"
+                            title="Ready for Erection"
+                          ></div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -665,11 +721,16 @@ export default function BridgeDashboard() {
                     </div>
                   </div>
 
-                  {/* Girder Line - unchanged */}
-                  <div className={`h-2.5 w-full relative ${isGirderHere ? 'bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.4)]' : 'bg-slate-300'} border-x border-white/30 z-10 mt-[-4px]`}>
+                  {/* Girder Line */}
+                  <div className={`h-2.5 w-full relative ${isGirderHere ? 'bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.4)]' : isPredictedLG ? 'bg-purple-400/40 border-2 border-dashed border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.3)]' : 'bg-slate-300'} border-x border-white/30 z-10 mt-[-4px]`}>
                     {isGirderHere && (
                       <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-orange-500 text-white font-black text-[7px] rounded-full shadow-lg z-30 whitespace-nowrap border border-orange-400">
                         <Anchor size={8} /> GIRDER
+                      </div>
+                    )}
+                    {isPredictedLG && (
+                      <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-purple-600 text-white font-black text-[7px] rounded-full shadow-lg z-30 whitespace-nowrap border border-purple-400 animate-pulse">
+                        <Anchor size={8} /> LG IN 30 DAYS (prediction)
                       </div>
                     )}
                   </div>
@@ -678,7 +739,9 @@ export default function BridgeDashboard() {
             );
           })}
           </div>
-        )}
+          );
+          })()
+        }
 
 
         {/* Modal Popup */}

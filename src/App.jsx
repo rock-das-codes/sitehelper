@@ -678,7 +678,7 @@ export default function BridgeDashboard() {
                         key={i}
                         onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
                         className={`relative flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
-                        title={`Segment ${sNum}\nCasting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}\nCuring Days: ${cDate ? Math.floor((new Date() - cDate) / (1000 * 60 * 60 * 24)) : 'N/A'}\nReady for Erection: ${isReadyForErection ? 'Yes' : 'No'}`}
+                        title={`Segment ${sNum}\nCasting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}\nCuring Days: ${cDate ? Math.floor((new Date() - cDate) / (1000 * 60 * 60 * 24)) : 'N/A'}\n${eS?.toLowerCase() === 'completed' ? 'Erection Completed' : 'Ready for Erection: ' + (isReadyForErection ? 'Yes' : 'No')}`}
                       >
                         {isReadyForErection && (
                           <div 

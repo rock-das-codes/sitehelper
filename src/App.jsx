@@ -23,6 +23,34 @@ const isDrawingUnavailable = (status) => {
   return s === "not available" || s === "n/a" || s === "na" || s === "unavailable";
 };
 
+const getNormalizedLgDirection = (row) => {
+  const raw =
+    row['LG_Movement_Direction'] ||
+    row['LG Movement Direction'] ||
+    row['LG_DIRECTION'] ||
+    row['LG Direction'] ||
+    row['Movement Direction'] ||
+    '';
+  const s = raw.toString().trim().toLowerCase();
+  if (!s) return null;
+
+  // Explicit directional phrases from planning sheets.
+  if (/(left\s*(to|->|→)\s*right|ltr|l\s*to\s*r)/i.test(s)) return 'right';
+  if (/(right\s*(to|->|→)\s*left|rtl|r\s*to\s*l)/i.test(s)) return 'left';
+
+  // Single-value variants.
+  if (s === 'right' || s === 'r') return 'right';
+  if (s === 'left' || s === 'l') return 'left';
+
+  // Fallback for text containing only one side.
+  const hasLeft = s.includes('left');
+  const hasRight = s.includes('right');
+  if (hasRight && !hasLeft) return 'right';
+  if (hasLeft && !hasRight) return 'left';
+
+  return null;
+};
+
 const parseDate = (dStr) => {
   if (!dStr) return null;
   const s = dStr.trim();
@@ -143,6 +171,7 @@ export default function BridgeDashboard() {
   // pmsBySection: { S1: [{id, name, startPier, endPier}], S2: [...], ... }
   const [pmsBySection, setPmsBySection] = useState(PROJECT_MANAGERS);
   const [isPmLoading, setIsPmLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -200,18 +229,34 @@ export default function BridgeDashboard() {
       setIsLoading(true);
       const cacheBuster = `&t=${new Date().getTime()}`;
       const finalUrl = url.includes('?') ? `${url}${cacheBuster}` : `${url}?${cacheBuster}`;
-      Papa.parse(finalUrl, {
-        download: true,
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          setData(results.data);
-          setIsLoading(false);
-        },
-        error: (err) => {
-          console.error("Parsing error:", err);
-          setIsLoading(false);
+      
+      // Force bypass cache with fetch
+      fetch(finalUrl, { 
+        cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache'
         }
+      })
+      .then(response => response.text())
+      .then(text => {
+        Papa.parse(text, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            setData(results.data);
+            setLastUpdated(new Date());
+            setIsLoading(false);
+          },
+          error: (err) => {
+            console.error("Parsing error:", err);
+            setIsLoading(false);
+          }
+        });
+      })
+      .catch(err => {
+        console.error("Fetch error:", err);
+        setIsLoading(false);
       });
     } else {
       setData([]);
@@ -538,7 +583,15 @@ export default function BridgeDashboard() {
           <div className="flex justify-between items-center w-full lg:w-auto">
             <div>
               <h1 className="text-[10px] lg:text-xs font-black tracking-[0.2em] uppercase text-white/90 whitespace-nowrap leading-none">Progress Schematic</h1>
-              <p className="text-[8px] lg:text-[9px] font-bold text-blue-400 tracking-widest mt-1 whitespace-nowrap leading-none">DASHBOARD v2.0</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-[8px] lg:text-[9px] font-bold text-blue-400 tracking-widest whitespace-nowrap leading-none">DASHBOARD v2.0</p>
+                {lastUpdated && (
+                  <span className="text-[7px] font-medium text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700/50 flex items-center gap-1">
+                    <span className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></span>
+                    SYNCED: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
+              </div>
             </div>
             
             <div className="flex items-center gap-2 lg:hidden">
@@ -760,7 +813,7 @@ export default function BridgeDashboard() {
             if (loc && loc.trim() !== '' && loc === r['Span ID']) {
               const type = r['Type']?.toUpperCase().trim();
               if (type === 'SBS' || type === 'FSLM') {
-                const direction = (r['LG_Movement_Direction'] || '').trim().toLowerCase();
+                const direction = getNormalizedLgDirection(r);
                 const spanOffset = type === 'SBS' ? 5 : 40;
                 
                 if (direction === 'right') {
@@ -781,7 +834,7 @@ export default function BridgeDashboard() {
             const girderLoc = row['Girder_Location_Span_ID'];
             const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
             const isPredictedLG = predictedSpanIds.has(row['Span ID']);
-            const currentLgDirection = isGirderHere ? (row['LG_Movement_Direction'] || '').trim().toLowerCase() : null;
+            const currentLgDirection = isGirderHere ? getNormalizedLgDirection(row) : null;
             const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
 
             // Adjust width limit so it displays 3-4 spans horizontally

@@ -12,6 +12,11 @@ const SECTION_URLS = {
   S4: import.meta.env.VITE_SHEET_URL_S4,
 };
 
+// URL of the sheet tab that has the PM mapping table
+// Columns expected: Section | Project Manager | Pier ID Range
+// "Pier ID Range" can be  "21P01-21P40"  or  "21P01 to 21P40"  (both parsed)
+const PM_SHEET_URL = import.meta.env.VITE_SHEET_URL_PM;
+
 const isDrawingUnavailable = (status) => {
   if (!status) return false;
   const s = status.toString().toLowerCase().trim();
@@ -91,6 +96,40 @@ const isPreviousDay = (dStr) => {
   return d.getDate() === prev.getDate() && d.getMonth() === prev.getMonth() && d.getFullYear() === prev.getFullYear();
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECT MANAGER CONFIGURATION
+// Edit the name, startPier, and endPier for each PM below.
+// Pier IDs must exactly match the values in your Google Sheet.
+// Add or remove entries as needed. Sections S1–S4 are supported.
+// ─────────────────────────────────────────────────────────────────────────────
+const PROJECT_MANAGERS = {
+  S1: [
+    { id: 'S1-PM1', name: 'PM 1', startPier: '21P01', endPier: '21P20' },
+    { id: 'S1-PM2', name: 'PM 2', startPier: '21P21', endPier: '21P40' },
+    { id: 'S1-PM3', name: 'PM 3', startPier: '21P41', endPier: '21P60' },
+    { id: 'S1-PM4', name: 'PM 4', startPier: '21P61', endPier: '52P99' },
+  ],
+  S2: [
+    { id: 'S2-PM1', name: 'PM 1', startPier: '85P08', endPier: '96P26' },
+    { id: 'S2-PM2', name: 'PM 2', startPier: '97P01', endPier: '110P25' },
+    { id: 'S2-PM3', name: 'PM 3', startPier: '111P01', endPier: '120P26' },
+    { id: 'S2-PM4', name: 'PM 4', startPier: '121P01', endPier: '125P17' },
+  ],
+  S3: [
+    { id: 'S3-PM1', name: 'PM 1', startPier: '127P15', endPier: '134P25' },
+    { id: 'S3-PM2', name: 'PM 2', startPier: '135P01', endPier: '143P25' },
+    { id: 'S3-PM3', name: 'PM 3', startPier: '144P01', endPier: '150P25' },
+    { id: 'S3-PM4', name: 'PM 4', startPier: '151P01', endPier: '156P15' },
+  ],
+  S4: [
+    { id: 'S4-PM1', name: 'PM 1', startPier: '53P01', endPier: '62P22' },
+    { id: 'S4-PM2', name: 'PM 2', startPier: '63P01', endPier: '72P25' },
+    { id: 'S4-PM3', name: 'PM 3', startPier: '73P01', endPier: '80P26' },
+    { id: 'S4-PM4', name: 'PM 4', startPier: '81P01', endPier: '85P08' },
+  ],
+};
+
+
 export default function BridgeDashboard() {
   const [data, setData] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -100,11 +139,62 @@ export default function BridgeDashboard() {
   const [activeSection, setActiveSection] = useState("S1");
   const [showStats, setShowStats] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
+  const [selectedPM, setSelectedPM] = useState("");
+  // pmsBySection: { S1: [{id, name, startPier, endPier}], S2: [...], ... }
+  const [pmsBySection, setPmsBySection] = useState(PROJECT_MANAGERS);
+  const [isPmLoading, setIsPmLoading] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
 
 
+  // Fetch PM mapping from sheet on mount (once)
   useEffect(() => {
+    if (!PM_SHEET_URL) return; // no URL configured → use hardcoded fallback
+    setIsPmLoading(true);
+    const cacheBuster = `&t=${new Date().getTime()}`;
+    const pmUrl = PM_SHEET_URL.includes('?') ? `${PM_SHEET_URL}${cacheBuster}` : `${PM_SHEET_URL}?${cacheBuster}`;
+    Papa.parse(pmUrl, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        // Build pmsBySection from rows like: { Section, "Project Manager", "Pier ID Range" }
+        const bySection = { S1: [], S2: [], S3: [], S4: [] };
+        results.data.forEach((row, idx) => {
+          let section = (row['Section'] || row['SECTION'] || '').trim().toUpperCase();
+          // Normalize: "1" -> "S1", "2" -> "S2", etc.
+          if (section && !section.startsWith('S') && /^\d+$/.test(section)) {
+            section = `S${section}`;
+          }
+          
+          const pmName  = (row['Project Manager'] || row['PROJECT MANAGER'] || row['Project Manage'] || '').trim();
+          const range   = (row['Pier ID Range'] || row['PIER ID RANGE'] || '').trim();
+          
+          if (!section || !pmName || !range) return;
+          
+          // Parse range: supports "21P01-21P40", "21P01 to 21P40", "21P01 – 21P40"
+          const parts = range.split(/\s*(?:to|-|–|—|TO)\s*/i).map(s => s.trim());
+          const startPier = parts[0] || '';
+          const endPier   = parts[1] || parts[0] || '';
+          
+          if (!bySection[section]) bySection[section] = [];
+          bySection[section].push({
+            id: `${section}-PM${idx + 1}`,
+            name: pmName,
+            startPier,
+            endPier,
+          });
+        });
+        setPmsBySection(bySection);
+        setIsPmLoading(false);
+      },
+      error: () => setIsPmLoading(false),
+    });
+  }, []);
+
+  // Fetch section data when activeSection changes
+  useEffect(() => {
+    setSelectedPM(""); // Reset PM selection when switching section
     const url = SECTION_URLS[activeSection];
     if (url) {
       setIsLoading(true);
@@ -189,7 +279,51 @@ export default function BridgeDashboard() {
     return 'fill-white stroke-slate-300';
   };
 
-  const filteredData = data.filter(row => row['Pier ID']?.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Pre-calculate indices for PM filtering
+  let pmStartIdx = -1;
+  let pmEndIdx = -1;
+  let activePM = null;
+  if (selectedPM) {
+    const pmList = pmsBySection[activeSection] || [];
+    activePM = pmList.find(p => p.id === selectedPM);
+    if (activePM) {
+      const sPier = activePM.startPier.trim().toUpperCase();
+      const ePier = activePM.endPier.trim().toUpperCase();
+      
+      pmStartIdx = data.findIndex(r => (r['Pier ID'] || '').trim().toUpperCase() === sPier);
+      // For endPier, find the LAST row matching that pier ID
+      pmEndIdx = data.reduce((acc, r, i) => (r['Pier ID'] || '').trim().toUpperCase() === ePier ? i : acc, -1);
+    }
+  }
+
+  const filteredData = data.filter((row, index) => {
+    const matchesSearch = (row['Pier ID'] || '').toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
+
+    if (activePM) {
+      if (pmStartIdx !== -1 && pmEndIdx !== -1) {
+        if (index < pmStartIdx || index > pmEndIdx) return false;
+      } else {
+        // Fallback string-based parsing for safety
+        const pierId = (row['Pier ID'] || '').trim().toUpperCase();
+        if (!pierId) return false;
+        
+        const extractNum = (str) => {
+          const match = str.match(/\d*P(\d+)/i);
+          return match ? parseInt(match[1], 10) : parseInt(str.replace(/\D/g, ''), 10);
+        };
+
+        const pNum = extractNum(pierId);
+        const sNum = extractNum(activePM.startPier);
+        const eNum = extractNum(activePM.endPier);
+        
+        if (!isNaN(pNum) && !isNaN(sNum) && !isNaN(eNum)) {
+          if (pNum < sNum || pNum > eNum) return false;
+        }
+      }
+    }
+    return true;
+  });
 
   const getSummary = () => {
     const summary = {
@@ -453,6 +587,30 @@ export default function BridgeDashboard() {
                   ))}
                 </select>
               </div>
+
+              {/* Project Manager Filter */}
+              {(
+                <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                  <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-1">
+                    Project Manager
+                    {isPmLoading && <span className="text-green-400 animate-pulse">●</span>}
+                  </label>
+                  <select
+                    value={selectedPM}
+                    onChange={(e) => setSelectedPM(e.target.value)}
+                    disabled={isPmLoading}
+                    className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-green-500 transition-colors cursor-pointer appearance-none min-w-[160px] w-full disabled:opacity-50"
+                    style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2322c55e\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
+                  >
+                    <option value="">ALL MANAGERS</option>
+                    {(pmsBySection[activeSection] || []).map((pm) => (
+                      <option key={pm.id} value={pm.id}>
+                        {pm.name} · {pm.startPier}–{pm.endPier}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Filters Group */}
@@ -596,29 +754,25 @@ export default function BridgeDashboard() {
           </div>
         ) : (() => {
           // --- LG Prediction Logic ---
-          let predictedSpanId = null;
-          let lgDirection = null;
-          const girderRow = filteredData.find(r => {
+          const predictedSpanIds = new Set();
+          filteredData.forEach((r, idx) => {
             const loc = r['Girder_Location_Span_ID'];
-            return loc && loc.trim() !== '' && loc === r['Span ID'];
-          });
-          if (girderRow) {
-            const type = girderRow['Type']?.toUpperCase().trim();
-            if (type === 'SBS' || type === 'FSLM') {
-              const girderIdx = filteredData.indexOf(girderRow);
-              const direction = (girderRow['LG_Movement_Direction'] || '').trim().toLowerCase();
-              lgDirection = direction;
-              const spanOffset = type === 'SBS' ? 5 : 40;
-              
-              if (direction === 'right') {
-                const predIdx = girderIdx + spanOffset;
-                if (predIdx < filteredData.length) predictedSpanId = filteredData[predIdx]['Span ID'];
-              } else if (direction === 'left') {
-                const predIdx = girderIdx - spanOffset;
-                if (predIdx >= 0) predictedSpanId = filteredData[predIdx]['Span ID'];
+            if (loc && loc.trim() !== '' && loc === r['Span ID']) {
+              const type = r['Type']?.toUpperCase().trim();
+              if (type === 'SBS' || type === 'FSLM') {
+                const direction = (r['LG_Movement_Direction'] || '').trim().toLowerCase();
+                const spanOffset = type === 'SBS' ? 5 : 40;
+                
+                if (direction === 'right') {
+                  const predIdx = idx + spanOffset;
+                  if (predIdx < filteredData.length) predictedSpanIds.add(filteredData[predIdx]['Span ID']);
+                } else if (direction === 'left') {
+                  const predIdx = idx - spanOffset;
+                  if (predIdx >= 0) predictedSpanIds.add(filteredData[predIdx]['Span ID']);
+                }
               }
             }
-          }
+          });
           // --- End LG Prediction ---
           return (
           <div className="max-w-7xl mx-auto flex flex-wrap gap-y-40 gap-x-0 justify-start items-end">
@@ -626,7 +780,8 @@ export default function BridgeDashboard() {
 
             const girderLoc = row['Girder_Location_Span_ID'];
             const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
-            const isPredictedLG = predictedSpanId && row['Span ID'] === predictedSpanId;
+            const isPredictedLG = predictedSpanIds.has(row['Span ID']);
+            const currentLgDirection = isGirderHere ? (row['LG_Movement_Direction'] || '').trim().toLowerCase() : null;
             const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
 
             // Adjust width limit so it displays 3-4 spans horizontally
@@ -647,9 +802,9 @@ export default function BridgeDashboard() {
                 {/* Segment Boxes - positioned above girder, anchored to pier unit */}
                 <div className={`absolute left-6 right-0 bottom-[calc(100%+4px)] flex flex-nowrap justify-center gap-[1px] p-1 bg-slate-100/50 rounded-md border border-dashed border-slate-300 min-h-[40px] items-center z-10 shadow-sm`}>
                   {/* Arrow Above Segment Box */}
-                  {isGirderHere && lgDirection && (
+                  {isGirderHere && currentLgDirection && (
                     <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center justify-center bg-white rounded-full p-[2px] shadow-sm border border-slate-200 z-50">
-                      {lgDirection === 'left' ? <ArrowLeft size={16} strokeWidth={3} className="text-orange-500" /> : <ArrowRight size={16} strokeWidth={3} className="text-orange-500" />}
+                      {currentLgDirection === 'left' ? <ArrowLeft size={16} strokeWidth={3} className="text-orange-500" /> : <ArrowRight size={16} strokeWidth={3} className="text-orange-500" />}
                     </div>
                   )}
                   {Array.from({ length: segCount }).map((_, i) => {
@@ -678,7 +833,7 @@ export default function BridgeDashboard() {
                         key={i}
                         onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
                         className={`relative flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
-                        title={`Segment ${sNum}\nCasting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}\nCuring Days: ${cDate ? Math.floor((new Date() - cDate) / (1000 * 60 * 60 * 24)) : 'N/A'}\n${eS?.toLowerCase() === 'completed' ? 'Erection Completed' : 'Ready for Erection: ' + (isReadyForErection ? 'Yes' : 'No')}`}
+                        title={`Segment ${sNum}\nCasting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}\n${eS?.toLowerCase() === 'completed' ? 'Erection Completed' : 'Ready for Erection: ' + (isReadyForErection ? 'Yes' : 'No')}`}
                       >
                         {isReadyForErection && (
                           <div 

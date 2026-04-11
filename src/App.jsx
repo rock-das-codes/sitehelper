@@ -393,27 +393,27 @@ export default function BridgeDashboard() {
 
       // Superstructure segments are always additive per row (Span)
       if (type && summary.superstructure[type]) {
-        summary.superstructure[type].planned += segCount;
-        for (let i = 1; i <= segCount; i++) {
-          const sNum = String(i).padStart(2, '00');
-          const erectionStatus = row[`S${sNum}_Erection_Status`];
-          const erectionDate = row[`S${sNum}_Erection_Date`];
+  summary.superstructure[type].planned += segCount;
+  for (let i = 1; i <= segCount; i++) {
+    const sNum = String(i).padStart(2, '00');
+    const castingStatus = row[`S${sNum}_Casting_Status`];   // ← casting
+    const castingDate   = row[`S${sNum}_Casting_Date`];     // ← casting
 
-          if (erectionStatus?.toLowerCase() === 'completed') {
-            if (dateRange.from && dateRange.to) {
-              if (isInSelectedRange(erectionDate)) summary.superstructure[type].achieved += 1;
-            } else {
-              summary.superstructure[type].achieved += 1;
-            }
-          }
-          if (isCurrentMonth(erectionDate)) {
-            summary.superstructure[type].ftm += 1;
-          }
-          if (isPreviousDay(erectionDate)) {
-            summary.superstructure[type].prevDay += 1;
-          }
-        }
+    if (castingStatus?.toLowerCase() === 'completed') {
+      if (dateRange.from && dateRange.to) {
+        if (isInSelectedRange(castingDate)) summary.superstructure[type].achieved += 1;
+      } else {
+        summary.superstructure[type].achieved += 1;
       }
+    }
+    if (isCurrentMonth(castingDate)) {
+      summary.superstructure[type].ftm += 1;
+    }
+    if (isPreviousDay(castingDate)) {
+      summary.superstructure[type].prevDay += 1;
+    }
+  }
+}
 
       if (pierId && !uniquePiers.has(pierId)) {
         uniquePiers.add(pierId);
@@ -576,190 +576,179 @@ export default function BridgeDashboard() {
     <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100">
 
       {/* Schematic Header */}
-      <div className="w-full bg-slate-900 text-white sticky top-0 z-50 shadow-2xl border-b border-slate-700">
-        <div className="px-4 lg:px-6 py-3 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-          
-          {/* Top Bar: Title + Mobile Actions */}
-          <div className="flex justify-between items-center w-full lg:w-auto">
-            <div>
-              <h1 className="text-[10px] lg:text-xs font-black tracking-[0.2em] uppercase text-white/90 whitespace-nowrap leading-none">Progress Schematic</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-[8px] lg:text-[9px] font-bold text-blue-400 tracking-widest whitespace-nowrap leading-none">DASHBOARD v2.0</p>
-                {lastUpdated && (
-                  <span className="text-[7px] font-medium text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700/50 flex items-center gap-1">
-                    <span className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></span>
-                    SYNCED: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </span>
-                )}
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 lg:hidden">
-              <button 
-                onClick={() => setShowStats(!showStats)}
-                className={`p-2 rounded-lg transition-colors ${showStats ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
-                title="Toggle Stats"
-              >
-                <BarChart3 size={18} />
-              </button>
-            </div>
-          </div>
+      <div className="w-full bg-white text-[#004b88] sticky top-0 z-50 shadow-lg border-2 border-[#004b88] rounded-2xl mt-2">
+  <div className="px-3 lg:px-6 py-2 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    
+    {/* Col 1: Logo & Version */}
+    <div className="flex flex-row lg:flex-col items-center lg:items-start justify-between lg:justify-center shrink-0">
+      <div className="h-10 lg:h-16 w-32 lg:w-40 relative">
+        <img 
+          src="/logo2.png" 
+          alt="Company Logo" 
+          className="h-full w-full object-contain mix-blend-multiply lg:absolute lg:-top-12 lg:right-4" 
+        />
+      </div>
+      
+      <div className="flex flex-col gap-1">
+        <p className="text-[8px] font-bold tracking-widest uppercase">DASHBOARD v2.0</p>
+        {lastUpdated && (
+          <span className="text-[7px] font-medium bg-blue-50 px-1.5 py-0.5 rounded border border-[#004b88]/40 flex items-center gap-1">
+            <span className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></span>
+            <span className="hidden sm:inline">SYNCED:</span> {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+    </div>
 
-          <div className="flex flex-col md:flex-row lg:items-center gap-4 w-full lg:w-auto">
-            {/* Selectors Group */}
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Section Selector */}
-              <div className="flex flex-col gap-1 flex-1 sm:flex-none">
-                <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1">Data Section</label>
-                <select
-                  value={activeSection}
-                  onChange={(e) => setActiveSection(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-blue-500 transition-colors cursor-pointer appearance-none min-w-[100px] w-full"
-                  style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
-                >
-                  <option value="S1">SECTION 1</option>
-                  <option value="S2">SECTION 2</option>
-                  <option value="S3">SECTION 3</option>
-                  <option value="S4">SECTION 4</option>
-                </select>
-              </div>
+    {/* Col 2: Controls Container */}
+    <div className="flex-1 flex flex-col items-center gap-3">
+      <h1 className="text-sm lg:text-lg font-black tracking-widest lg:tracking-[0.2em] uppercase text-center">
+        MAHSR C3 PROGRESS SCHEMATIC
+      </h1>
+      
+      {/* Responsive Wrap: Stacks on mobile, rows on desktop */}
+      <div className="flex flex-wrap justify-center gap-2 lg:gap-3 w-full">
+        
+        {/* Section Select */}
+        <div className="flex flex-col gap-0.5 flex-1 min-w-[100px] max-w-[120px]">
+          <label className="text-[6px] font-bold uppercase ml-1">Section</label>
+          <select 
+            value={activeSection} 
+            onChange={(e) => setActiveSection(e.target.value)}
+            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px' }}
+          >
+            <option value="S1">SECTION 1</option>
+            <option value="S2">SECTION 2</option>
+            <option value="S3">SECTION 3</option>
+            <option value="S4">SECTION 4</option>
+          </select>
+        </div>
 
-              {/* Girder Selector */}
-              <div className="flex flex-col gap-1 flex-1 sm:flex-none">
-                <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1">Navigate to LG</label>
-                <select
-                  onChange={(e) => handleGirderSelect(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-orange-500 transition-colors cursor-pointer appearance-none min-w-[120px] w-full"
-                  style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23fb923c\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
-                >
-                  <option value="">SELECT GIRDER...</option>
-                  {data.filter(row => row['Girder_Location_Span_ID'] && row['Girder_Location_Span_ID'].trim() !== "" && row['Girder_Location_Span_ID'] === row['Span ID']).map((row, i) => (
-                    <option key={i} value={row['Span ID']}>
-                      {row['Span ID']} ({row['Pier ID']})
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Girder Select */}
+        <div className="flex flex-col gap-0.5 flex-1 min-w-[120px] max-w-[140px]">
+          <label className="text-[6px] font-bold uppercase ml-1">Navigate LG</label>
+          <select 
+            onChange={(e) => handleGirderSelect(e.target.value)}
+            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23fb923c\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px' }}
+          >
+            <option value="">SELECT...</option>
+            {data.filter(row => row['Girder_Location_Span_ID'] === row['Span ID']).map((row, i) => (
+              <option key={i} value={row['Span ID']}>{row['Span ID']}</option>
+            ))}
+          </select>
+        </div>
 
-              {/* Project Manager Filter */}
-              {(
-                <div className="flex flex-col gap-1 flex-1 sm:flex-none">
-                  <label className="text-[7px] font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-1">
-                    Project Manager
-                    {isPmLoading && <span className="text-green-400 animate-pulse">●</span>}
-                  </label>
-                  <select
-                    value={selectedPM}
-                    onChange={(e) => setSelectedPM(e.target.value)}
-                    disabled={isPmLoading}
-                    className="bg-slate-800 border border-slate-700 text-white text-[10px] font-black rounded px-2 py-1.5 outline-none hover:border-green-500 transition-colors cursor-pointer appearance-none min-w-[160px] w-full disabled:opacity-50"
-                    style={{ paddingRight: '20px', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2322c55e\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '12px' }}
-                  >
-                    <option value="">ALL MANAGERS</option>
-                    {(pmsBySection[activeSection] || []).map((pm) => (
-                      <option key={pm.id} value={pm.id}>
-                        {pm.name} · {pm.startPier}–{pm.endPier}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
+        {/* PM Select */}
+        <div className="flex flex-col gap-0.5 flex-1 min-w-[140px] max-w-[160px]">
+          <label className="text-[6px] font-bold uppercase ml-1 flex items-center gap-1">
+            PM {isPmLoading && <span className="text-green-400 animate-pulse">●</span>}
+          </label>
+          <select 
+            value={selectedPM} 
+            onChange={(e) => setSelectedPM(e.target.value)} 
+            disabled={isPmLoading}
+            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none disabled:opacity-50"
+            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2322c55e\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px' }}
+          >
+            <option value="">ALL MANAGERS</option>
+            {(pmsBySection[activeSection] || []).map((pm) => (
+              <option key={pm.id} value={pm.id}>{pm.name}</option>
+            ))}
+          </select>
+        </div>
 
-            {/* Filters Group */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 px-2 py-1.5 rounded flex-grow sm:flex-grow-0">
-                <Calendar size={12} className="text-slate-500" />
-                <div className="flex items-center gap-1">
-                  <input
-                    type="date"
-                    className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-[75px] appearance-none"
-                    value={dateRange.from}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-                  />
-                  <span className="text-[8px] text-slate-600">→</span>
-                  <input
-                    type="date"
-                    className="bg-transparent text-[8px] font-bold text-slate-300 outline-none w-[75px] appearance-none"
-                    value={dateRange.to}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-                  />
-                </div>
-                {(dateRange.from || dateRange.to) && (
-                  <button
-                    onClick={() => setDateRange({ from: "", to: "" })}
-                    className="text-[8px] font-black text-blue-400 hover:text-white uppercase ml-1"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-
-              <div className="relative group flex-grow sm:flex-grow-0 min-w-[150px]">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={12} />
-                <input
-                  type="text"
-                  placeholder="SEARCH PIER..."
-                  className="bg-slate-800/50 border border-slate-700 pl-8 pr-3 py-1.5 rounded text-[8px] font-bold tracking-widest focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none w-full transition-all"
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Compact Summary Table - hidden on mobile unless showStats is true */}
-          <div className={`${showStats ? 'block' : 'hidden lg:block'} overflow-hidden bg-slate-800 rounded border border-slate-700 shadow-inner flex-shrink-0 w-full lg:w-auto mt-2 lg:mt-0`}>
-            <table className="text-left text-[7px] border-collapse text-slate-300 w-full lg:w-[220px]">
-
-              <thead className="bg-[#e4b025] text-slate-900 font-bold tracking-wider capitalize">
-                <tr>
-                  <th className="px-1 py-0.5 border-r border-slate-700/50">Desc</th>
-                  <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">Plan</th>
-                  <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">Achv</th>
-                  <th className="px-1 py-0.5 border-r border-slate-700/50 text-center">FTM</th>
-                  <th className="px-1 py-0.5 text-center">Previous Day</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/50">
-                <tr className="hover:bg-slate-700/50 transition-colors">
-                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Foundation</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.foundation.planned || ''}</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.foundation.achieved || ''}</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.foundation.ftm || ''}</td>
-                  <td className="px-1 py-[1px] text-center">{summary.foundation.prevDay || ''}</td>
-                </tr>
-                <tr className="hover:bg-slate-700/50 transition-colors bg-slate-800/30">
-                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Pier</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pier.planned || ''}</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.pier.achieved || ''}</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pier.ftm || ''}</td>
-                  <td className="px-1 py-[1px] text-center">{summary.pier.prevDay || ''}</td>
-                </tr>
-                <tr className="hover:bg-slate-700/50 transition-colors">
-                  <td className="px-1 py-[1px] font-medium border-r border-slate-700/50 lowercase">Pier Cap</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pierCap.planned || ''}</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.pierCap.achieved || ''}</td>
-                  <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.pierCap.ftm || ''}</td>
-                  <td className="px-1 py-[1px] text-center">{summary.pierCap.prevDay || ''}</td>
-                </tr>
-                <tr className="bg-slate-700 text-slate-100 font-bold">
-                  <td colSpan="5" className="px-1 py-0.5 text-center uppercase tracking-widest text-[5px]">Superstructure</td>
-                </tr>
-                {Object.keys(summary.superstructure).map((type, i) => (
-                  <tr key={type} className={`hover:bg-slate-700/50 transition-colors ${i % 2 === 0 ? 'bg-slate-800/30' : ''}`}>
-                    <td className="px-1 py-[1px] font-medium border-r border-slate-700/50">{type}</td>
-                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.superstructure[type].planned || ''}</td>
-                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50 font-bold text-white">{summary.superstructure[type].achieved || ''}</td>
-                    <td className="px-1 py-[1px] text-center border-r border-slate-700/50">{summary.superstructure[type].ftm || ''}</td>
-                    <td className="px-1 py-[1px] text-center">{summary.superstructure[type].prevDay || ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Date Range */}
+        <div className=' flex flex-col md:flex-row  gap-2'>
+        <div className="flex flex-col gap-0.5 flex-1 min-w-[180px]">
+          <label className="text-[6px] font-bold uppercase ml-1">Date Range</label>
+          <div className="flex w-fit items-center gap-1 bg-blue-50 border border-[#004b88]/50 px-2 py-1 rounded h-[26px]">
+            <Calendar size={10} className="shrink-0" />
+            <input type="date" className="bg-transparent text-[8px] font-bold outline-none w-full" value={dateRange.from} onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))} />
+            <span className="text-[8px]">→</span>
+            <input type="date" className="bg-transparent text-[8px] font-bold outline-none w-full" value={dateRange.to} onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))} />
           </div>
         </div>
-      </div>
 
+        {/* Search */}
+ {/* Search */}
+<div className="flex flex-col gap-0.5 flex-1 min-w-[120px] max-w-[140px]">
+  <label className="text-[6px] font-bold uppercase ml-1">Search Pier</label>
+  <div className="relative">
+    <Search className="absolute left-2 top-1/2 -translate-y-1/2 opacity-70" size={10} />
+    <input 
+      type="text"
+      value={searchTerm}
+      placeholder="SEARCH..."
+      className="bg-blue-50 border border-[#004b88]/50 pl-7 pr-2 py-1 rounded text-[8px] font-bold w-full  outline-none"
+      onChange={(e) => setSearchTerm(e.target.value)} 
+    />
+  </div>
+</div> </div>
+        {/* Stats Toggle (Mobile Only) */}
+        <button 
+          onClick={() => setShowStats(!showStats)}
+          className={`lg:hidden p-2 rounded border border-[#004b88] self-end h-[26px] ${showStats ? 'bg-[#004b88] text-white' : 'bg-white'}`}
+        >
+          <BarChart3 size={12} />
+        </button>
+      </div>
+    </div>
+
+    {/* Col 3: Summary Table */}
+    <div className={`${showStats ? 'block' : 'hidden'} lg:block shrink-0 w-full lg:w-auto max-w-[300px] uppercase lg:max-w-none`}>
+      <div className="overflow-hidden bg-white rounded-xl border border-[#004b88] shadow-sm">
+        <table className="text-left text-[7px] border-collapse w-full lg:w-[260px]">
+          <thead className="bg-[#004b88] text-white font-bold">
+            <tr>
+              <th className="px-1 py-1 border-r border-white/30">DESCRIPTION</th>
+              <th className="px-1 py-1 border-r border-white/30 text-center">SCOPE</th>
+              <th className="px-1 py-1 border-r border-white/30 text-center">ACHIEVED</th>
+              <th className="px-1 py-1 border-r border-white/30 text-center">FTM</th>
+              <th className="px-1 py-1 text-center">PREV DAY</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#004b88]/20">
+             <tr className="hover:bg-blue-50">
+               <td className="px-1 py-1 font-medium border-r border-[#004b88]/20">Foundation</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.foundation.planned || ''}</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.foundation.achieved || ''}</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.foundation.ftm || ''}</td>
+               <td className="px-1 py-1 text-center font-bold">{summary.foundation.prevDay || ''}</td>
+             </tr>
+             <tr className="hover:bg-blue-50 bg-blue-50/40">
+               <td className="px-1 py-1 font-medium border-r border-[#004b88]/20">Pier</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.pier.planned || ''}</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.pier.achieved || ''}</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.pier.ftm || ''}</td>
+               <td className="px-1 py-1 text-center font-bold">{summary.pier.prevDay || ''}</td>
+             </tr>
+             <tr className="hover:bg-blue-50">
+               <td className="px-1 py-1 font-medium border-r border-[#004b88]/20">Pier Cap</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.pierCap.planned || ''}</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.pierCap.achieved || ''}</td>
+               <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.pierCap.ftm || ''}</td>
+               <td className="px-1 py-1 text-center font-bold">{summary.pierCap.prevDay || ''}</td>
+             </tr>
+             <tr className="bg-[#004b88] text-white font-bold">
+               <td colSpan="5" className="px-1 py-0.5 text-center uppercase text-[7px]">Superstructure</td>
+             </tr>
+             {Object.keys(summary.superstructure).map((type, i) => (
+                <tr key={type} className={`text-[7px] ${i % 2 === 0 ? 'bg-blue-50/40' : ''}`}>
+                  <td className="px-1 py-1 border-r border-[#004b88]/20">{type}</td>
+                  <td className="px-1 py-1 text-center border-r border-[#004b88]/20">{summary.superstructure[type].planned || ''}</td>
+                  <td className="px-1 py-1 text-center border-r border-[#004b88]/20 font-bold">{summary.superstructure[type].achieved || ''}</td>
+                  <td className="px-1 py-1 text-center border-r border-[#004b88]/20">{summary.superstructure[type].ftm || ''}</td>
+                  <td className="px-1 py-1 text-center">{summary.superstructure[type].prevDay || ''}</td>
+                </tr>
+             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
       {/* Floating Print / Export Button */}
       <button
         onClick={handleExportPDF}

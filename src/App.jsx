@@ -51,6 +51,31 @@ const getNormalizedLgDirection = (row) => {
   return null;
 };
 
+const getPortalPierCount = (row) => {
+  const raw =
+    row['Pier_Number'] ??
+    row['Pier Number'] ??
+    row['PIER_NUMBER'] ??
+    row['PIER NUMBER'] ??
+    '';
+
+  const num = parseInt(String(raw).trim(), 10);
+  return Number.isFinite(num) && num > 0 ? num : 0;
+};
+
+const getCompletedPortalPierCount = (row) => {
+  const raw =
+    row['completed_pier'] ??
+    row['Completed_Pier'] ??
+    row['COMPLETED_PIER'] ??
+    row['Completed Pier'] ??
+    row['COMPLETED PIER'] ??
+    '';
+
+  const num = parseInt(String(raw).trim(), 10);
+  return Number.isFinite(num) && num > 0 ? num : 0;
+};
+
 const parseDate = (dStr) => {
   if (!dStr) return null;
   const s = dStr.trim();
@@ -287,13 +312,17 @@ export default function BridgeDashboard() {
   const getSegmentColor = (cStatus, eStatus, eDate) => {
     if (eStatus?.toLowerCase() === 'completed') {
       if (dateRange.from && dateRange.to) {
-        if (isInSelectedRange(eDate)) return 'bg-green-500 border-green-700'; // Completed in range
-        if (isBeforeRange(eDate)) return 'bg-green-200 border-green-300 opacity-60'; // Before range
-        return 'bg-white border-slate-300 text-slate-300'; // After range or pending
+        if (isInSelectedRange(eDate)) return 'bg-green-500 border-green-700'; // Erection completed in selected range
+        return 'bg-white border-slate-300 text-slate-300'; // Out of range: no color
       }
       return 'bg-green-500 border-green-700'; // No range, show all
     }
-    if (cStatus?.toLowerCase() === 'completed') return 'bg-blue-500 border-blue-700';   // Casting: Blue
+    if (cStatus?.toLowerCase() === 'completed') {
+      if (dateRange.from && dateRange.to) {
+        return 'bg-white border-slate-300 text-slate-300'; // Casting date check handled at call site
+      }
+      return 'bg-blue-500 border-blue-700'; // No range, show all casting
+    }
     return 'bg-white border-slate-300 text-slate-300'; // Pending
   };
 
@@ -303,7 +332,6 @@ export default function BridgeDashboard() {
     if (status?.toLowerCase() === 'completed') {
       if (dateRange.from && dateRange.to) {
         if (isInSelectedRange(compDate)) return 'bg-green-500 border-green-600';
-        if (isBeforeRange(compDate)) return 'bg-green-100 border-green-200 opacity-60';
         return 'bg-white border-slate-300';
       }
       return 'bg-green-500 border-green-600';
@@ -316,7 +344,6 @@ export default function BridgeDashboard() {
     if (status?.toLowerCase() === 'completed') {
       if (dateRange.from && dateRange.to) {
         if (isInSelectedRange(compDate)) return 'fill-green-500 stroke-green-600';
-        if (isBeforeRange(compDate)) return 'fill-green-100 stroke-green-200 opacity-60';
         return 'fill-white stroke-slate-300';
       }
       return 'fill-green-500 stroke-green-600';
@@ -824,6 +851,8 @@ export default function BridgeDashboard() {
             const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
             const isPredictedLG = predictedSpanIds.has(row['Span ID']);
             const currentLgDirection = isGirderHere ? getNormalizedLgDirection(row) : null;
+            const portalPierCount = getPortalPierCount(row);
+            const completedPortalPierCount = Math.min(getCompletedPortalPierCount(row), portalPierCount);
             const segCount = parseInt(row['No of Segments'] || row['No of Segment'] || 0);
 
             // Adjust width limit so it displays 3-4 spans horizontally
@@ -852,16 +881,29 @@ export default function BridgeDashboard() {
                   {Array.from({ length: segCount }).map((_, i) => {
                     const sNum = String(i + 1).padStart(2, '00');
                     const cS = row[`S${sNum}_Casting_Status`];
+                    const cDate = row[`S${sNum}_Casting_Date`];
                     const eS = row[`S${sNum}_Erection_Status`];
-                    const sColor = getSegmentColor(cS, eS, row[`S${sNum}_Erection_Date`]);
+                    const eDate = row[`S${sNum}_Erection_Date`];
+                    const sColor = (() => {
+                      if (dateRange.from && dateRange.to) {
+                        if (eS?.toLowerCase() === 'completed' && isInSelectedRange(eDate)) {
+                          return 'bg-green-500 border-green-700';
+                        }
+                        if (cS?.toLowerCase() === 'completed' && isInSelectedRange(cDate)) {
+                          return 'bg-blue-500 border-blue-700';
+                        }
+                        return 'bg-white border-slate-300 text-slate-300';
+                      }
+                      return getSegmentColor(cS, eS, eDate);
+                    })();
                     
                     let isReadyForErection = false;
                     const typeStr = row['Type']?.toUpperCase().trim();
-                    const cDate = parseDate(row[`S${sNum}_Casting_Date`]);
+                    const cDateParsed = parseDate(cDate);
                     if (typeStr === 'SBS' || typeStr === 'FSLM') {
                       if (cS?.toLowerCase() === 'completed' && eS?.toLowerCase() !== 'completed') {
-                        if (cDate) {
-                          const diffDays = (new Date() - cDate) / (1000 * 60 * 60 * 24);
+                        if (cDateParsed) {
+                          const diffDays = (new Date() - cDateParsed) / (1000 * 60 * 60 * 24);
                           const requiredDays = typeStr === 'SBS' ? 14 : 10;
                           if (diffDays >= requiredDays) {
                             isReadyForErection = true;
@@ -869,6 +911,11 @@ export default function BridgeDashboard() {
                         }
                       }
                     }
+                    const shouldShowReadyDot = isReadyForErection && (
+                      !dateRange.from ||
+                      !dateRange.to ||
+                      isInSelectedRange(cDate)
+                    );
 
                     return (
                       <div
@@ -877,7 +924,7 @@ export default function BridgeDashboard() {
                         className={`relative flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
                         title={`Segment ${sNum}\nCasting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}\n${eS?.toLowerCase() === 'completed' ? 'Erection Completed' : 'Ready for Erection: ' + (isReadyForErection ? 'Yes' : 'No')}`}
                       >
-                        {isReadyForErection && (
+                        {shouldShowReadyDot && (
                           <div 
                             className="absolute -top-2 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-yellow-400 rounded-full border-[0.5px] border-yellow-600 z-40"
                             title="Ready for Erection"
@@ -923,6 +970,23 @@ export default function BridgeDashboard() {
                     >
                       <path d="M 17.5 1.5 L 32.5 1.5 L 48.5 8.5 L 48.5 16.5 L 1.5 16.5 L 1.5 8.5 Z" strokeWidth={1} strokeLinejoin="round" />
                     </svg>
+                    {portalPierCount > 0 && (
+                      <div
+                        className="mt-1 flex items-center justify-center gap-[2px]"
+                        title={`Portal Pier: ${completedPortalPierCount}/${portalPierCount} completed`}
+                      >
+                        {Array.from({ length: portalPierCount }).map((_, i) => (
+                          <div
+                            key={i}
+                            className={`w-[7px] h-[7px] rounded-[1px] border ${
+                              i < completedPortalPierCount
+                                ? 'bg-green-500 border-green-700'
+                                : 'bg-cyan-100 border-cyan-500'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -898,13 +898,16 @@ export default function BridgeDashboard() {
                     })();
                     
                     let isReadyForErection = false;
+                    let curingDays = null;
+                    let requiredDays = null;
                     const typeStr = row['Type']?.toUpperCase().trim();
                     const cDateParsed = parseDate(cDate);
                     if (typeStr === 'SBS' || typeStr === 'FSLM') {
                       if (cS?.toLowerCase() === 'completed' && eS?.toLowerCase() !== 'completed') {
                         if (cDateParsed) {
                           const diffDays = (new Date() - cDateParsed) / (1000 * 60 * 60 * 24);
-                          const requiredDays = typeStr === 'SBS' ? 14 : 10;
+                          curingDays = Math.max(0, Math.floor(diffDays));
+                          requiredDays = typeStr === 'SBS' ? 14 : 10;
                           if (diffDays >= requiredDays) {
                             isReadyForErection = true;
                           }
@@ -917,12 +920,25 @@ export default function BridgeDashboard() {
                       isInSelectedRange(cDate)
                     );
 
+                    const tooltipLines = [
+                      `Segment ${sNum}`,
+                      `Casting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}`,
+                    ];
+                    if (requiredDays !== null && curingDays !== null) {
+                      tooltipLines.push(`Curing Days: ${curingDays} days`);
+                    }
+                    tooltipLines.push(
+                      eS?.toLowerCase() === 'completed'
+                        ? 'Erection Completed'
+                        : `Ready for Erection: ${isReadyForErection ? 'Yes' : 'No'}`
+                    );
+
                     return (
                       <div
                         key={i}
                         onClick={() => setSelected({ id: sNum, data: row, type: 'segment' })}
                         className={`relative flex-1 ${segCount === 1 ? 'h-9 border-2' : 'max-w-[10px] h-4 border-[0.5px]'} min-w-[3px] cursor-pointer transition-all rounded-sm ${segCount === 1 ? 'hover:scale-[1.01] hover:brightness-95' : 'hover:scale-150'} hover:z-30 ${sColor} ${segCount === 1 && sColor.includes('border-slate-300') ? 'border-slate-400' : ''}`}
-                        title={`Segment ${sNum}\nCasting Date: ${row[`S${sNum}_Casting_Date`] || 'N/A'}\n${eS?.toLowerCase() === 'completed' ? 'Erection Completed' : 'Ready for Erection: ' + (isReadyForErection ? 'Yes' : 'No')}`}
+                        title={tooltipLines.join('\n')}
                       >
                         {shouldShowReadyDot && (
                           <div 
@@ -1059,6 +1075,23 @@ export default function BridgeDashboard() {
               {/* ── SEGMENT modal ── */}
               {selected.type === 'segment' && (
                 <>
+                  {(() => {
+                    const typeStr = selected.data['Type']?.toUpperCase().trim();
+                    const castingStatus = selected.data[`S${selected.id}_Casting_Status`];
+                    const erectionStatus = selected.data[`S${selected.id}_Erection_Status`];
+                    const castingDate = selected.data[`S${selected.id}_Casting_Date`];
+                    const castingDateParsed = parseDate(castingDate);
+
+                    let requiredDays = null;
+                    let curingDays = null;
+                    if ((typeStr === 'SBS' || typeStr === 'FSLM') && castingStatus?.toLowerCase() === 'completed' && erectionStatus?.toLowerCase() !== 'completed' && castingDateParsed) {
+                      requiredDays = typeStr === 'SBS' ? 14 : 10;
+                      const diffDays = (new Date() - castingDateParsed) / (1000 * 60 * 60 * 24);
+                      curingDays = Math.max(0, Math.floor(diffDays));
+                    }
+
+                    return (
+                      <>
                   <div className={`p-8 text-white ${getModalHeaderColor()}`}>
                     <h3 className="text-3xl font-black">Segment {selected.id}</h3>
                     <p className="text-xs font-bold uppercase tracking-widest">{selected.data['Span ID']}</p>
@@ -1068,12 +1101,25 @@ export default function BridgeDashboard() {
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><Hammer size={12} /> Casting Status</p>
                       <div className="text-lg font-bold">{selected.data[`S${selected.id}_Casting_Status`]} ({selected.data[`S${selected.id}_Casting_Date`] || 'No Date'})</div>
                     </div>
-                    <div className="border-t pt-4">
+                    <div className="relative py-1">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-slate-700"></div>
+                      </div>
+                      <div className="relative flex justify-center">
+                        <span className="bg-white px-3 text-[10px] font-black text-slate-700 rounded">
+                         {requiredDays && curingDays !== null ? `${curingDays} days` : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className=" pt-4">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-2 flex items-center gap-2"><HardHat size={12} /> Erection Status</p>
                       <div className="text-lg font-bold">{selected.data[`S${selected.id}_Erection_Status`]} ({selected.data[`S${selected.id}_Erection_Date`] || 'No Date'})</div>
                     </div>
                     <button onClick={() => setSelected(null)} className="w-full py-4 bg-slate-100 text-black rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200">Close</button>
                   </div>
+                      </>
+                    );
+                  })()}
                 </>
               )}
 

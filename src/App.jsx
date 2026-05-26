@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3, ArrowRight, ArrowLeft, LogOut } from 'lucide-react';
+import { SignInButton, SignUpButton, UserButton, SignOutButton, useUser } from '@clerk/react';
 
 import { toCanvas, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -183,7 +184,44 @@ const PROJECT_MANAGERS = {
 };
 
 
+const CustomUserMenu = () => {
+  const { user } = useUser();
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative shrink-0">
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-[#004b88]/30 rounded-lg transition-colors shadow-sm"
+      >
+        <span className="text-[10px] font-bold text-[#004b88]">Welcome, {user?.firstName || user?.username || 'User'}</span>
+        <div className="w-7 h-7 rounded-full bg-[#004b88] text-white flex items-center justify-center overflow-hidden border border-[#004b88]/50">
+           {user?.imageUrl ? <img src={user.imageUrl} alt="Avatar" className="w-full h-full object-cover"/> : <span className="text-xs font-bold">{user?.firstName?.[0] || 'U'}</span>}
+        </div>
+      </button>
+      
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-[#004b88]/20 rounded-xl shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 text-left">
+             <p className="text-sm font-bold text-slate-800 truncate">{user?.fullName || user?.username || 'User'}</p>
+             <p className="text-xs text-slate-500 truncate mt-0.5">{user?.primaryEmailAddress?.emailAddress}</p>
+          </div>
+          <div className="p-2">
+             <SignOutButton>
+               <button className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2">
+                 <LogOut size={16} />
+                 Sign Out
+               </button>
+             </SignOutButton>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BridgeDashboard() {
+  const { isSignedIn } = useUser();
   const [data, setData] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selected, setSelected] = useState(null);
@@ -600,7 +638,30 @@ export default function BridgeDashboard() {
   };
 
   return (
-    <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100">
+    <>
+      {!isSignedIn && (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+          <div className="text-center flex flex-col items-center gap-6 p-8 bg-white rounded-3xl shadow-2xl border-2 border-[#004b88] max-w-md w-full">
+            <div className="h-24 w-48 relative">
+              <img src="/logo2.png" alt="Company Logo" className="h-full w-full object-contain mix-blend-multiply" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl font-black text-[#004b88] tracking-widest uppercase">Dashboard Access</h1>
+              <p className="text-slate-500 text-sm max-w-sm mx-auto">Please sign in to access the MAHSR C3 Progress Schematic dashboard and view detailed metrics.</p>
+            </div>
+            <SignInButton mode="modal">
+              <button className="w-full mt-2 px-6 py-3 text-sm font-bold bg-[#004b88] text-white rounded-xl hover:bg-blue-800 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 flex justify-center items-center gap-2">
+                Sign In to Continue <ArrowRight size={16} />
+              </button>
+            </SignInButton>
+          </div>
+        </div>
+      )}
+      {isSignedIn && (
+        <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100 relative">
+          <div className="absolute top-4 right-4 z-[100] lg:fixed">
+            <CustomUserMenu />
+          </div>
 
       {/* Schematic Header */}
       <div className="w-full bg-white text-[#004b88] sticky top-0 z-50 shadow-lg border-2 border-[#004b88] rounded-2xl mt-2">
@@ -1179,5 +1240,7 @@ export default function BridgeDashboard() {
         )}
       </div>
     </div>
+      )}
+    </>
   );
 }

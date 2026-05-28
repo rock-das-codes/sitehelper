@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3, ArrowRight, ArrowLeft, LogOut } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { SignInButton, SignUpButton, UserButton, SignOutButton, useUser } from '@clerk/react';
 
 import { toCanvas, toPng } from 'html-to-image';
@@ -661,6 +662,7 @@ export default function BridgeDashboard() {
         <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100 relative">
           <div className="absolute top-4 right-4 z-[100] lg:fixed">
             <CustomUserMenu />
+            <Link to="/data-entry" className="ml-4 px-3 py-1 bg-[#004b88] text-white rounded hover:bg-blue-800 transition-colors text-sm">Data Entry</Link>
           </div>
 
       {/* Schematic Header */}

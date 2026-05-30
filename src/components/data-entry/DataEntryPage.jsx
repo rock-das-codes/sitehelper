@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { ArrowLeft, ArrowRight, Save, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Save, X, Search, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { SignOutButton, useOrganization, useUser } from '@clerk/react';
 import StatusCard from './StatusCard';
 import SegmentTable from './SegmentTable';
@@ -27,6 +28,7 @@ export default function DataEntryPage({ onClose }) {
   const [editedData, setEditedData] = useState([]);
   const [selectedPier, setSelectedPier] = useState('');
   const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { user } = useUser();
   const { organization } = useOrganization();
 
@@ -78,16 +80,20 @@ export default function DataEntryPage({ onClose }) {
 
   // Save: convert to CSV and POST back to the sheet endpoint (placeholder)
   const handleSave = async () => {
+    setIsSaving(true);
     const csv = rowsToCsv(editedData);
     const writeUrl = import.meta.env[`VITE_SHEET_WRITE_URL_${section}`]; // user must provide this env var
     if (!writeUrl) {
       alert('Write URL not configured. Please set VITE_SHEET_WRITE_URL_<SECTION> in .env');
+      setIsSaving(false);
       return;
     }
     try {
-      await fetch(writeUrl, {
+      const finalUrl = `${writeUrl}?section=${section}`;
+      await fetch(finalUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/csv' },
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: csv,
       });
       alert('Data saved successfully!');
@@ -95,16 +101,18 @@ export default function DataEntryPage({ onClose }) {
     } catch (e) {
       console.error(e);
       alert('Failed to save data. Check console for details.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
   // Get unique pier IDs for selector
   const pierOptions = Array.from(new Set(editedData.map((r) => r['Pier ID']).filter(Boolean)));
 
-  // Filter rows for selected pier (or all if none selected)
+  // Filter rows for selected pier (empty if none selected to reduce load)
   const visibleRows = selectedPier
     ? editedData.filter((r) => (r['Pier ID'] || '').trim().toUpperCase() === selectedPier.trim().toUpperCase())
-    : editedData;
+    : [];
 
   // Completed preview (rows where all statuses are Completed)
   const completedRows = visibleRows.filter((row) => {
@@ -135,12 +143,17 @@ export default function DataEntryPage({ onClose }) {
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <button onClick={onClose} className="flex items-center gap-2 text-sm text-[#004b88] hover:underline">
+        <Link to="/" className="flex items-center gap-2 text-sm text-[#004b88] hover:underline">
           <ArrowLeft size={16} /> Back to Dashboard
-        </button>
+        </Link>
         <h2 className="text-xl font-black text-[#004b88]">Data Entry – Section {section}</h2>
-        <button onClick={handleSave} disabled={!isDirty || !canEdit} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold ${isDirty && canEdit ? 'bg-[#004b88] text-white hover:bg-blue-800' : 'bg-gray-300 text-gray-600 cursor-not-allowed'}`}>
-          <Save size={16} /> Save All
+        <button 
+          onClick={handleSave} 
+          disabled={!isDirty || !canEdit || isSaving} 
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${(isDirty && canEdit) ? 'bg-[#004b88] text-white hover:bg-blue-800 shadow-md hover:-translate-y-0.5' : 'bg-gray-300 text-gray-500 cursor-not-allowed'} ${isSaving ? 'opacity-70 !cursor-wait hover:translate-y-0' : ''}`}
+        >
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          {isSaving ? 'Saving...' : 'Save All'}
         </button>
       </div>
 
@@ -154,49 +167,66 @@ export default function DataEntryPage({ onClose }) {
           <option value="S4">S4</option>
         </select>
         <label className="text-xs font-bold uppercase ml-4">Pier</label>
-        <select value={selectedPier} onChange={(e) => setSelectedPier(e.target.value)} className="rounded border px-2 py-1 text-sm">
-          <option value="">All Piers</option>
-          {pierOptions.map((pid) => (
-            <option key={pid} value={pid}>
-              {pid}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <input
+            type="text"
+            list="pier-options"
+            value={selectedPier}
+            onChange={(e) => setSelectedPier(e.target.value)}
+            placeholder="Search Pier..."
+            className="rounded border px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-[#004b88] w-48 bg-white"
+          />
+          <datalist id="pier-options">
+            {pierOptions.map((pid) => (
+              <option key={pid} value={pid} />
+            ))}
+          </datalist>
+        </div>
       </div>
 
-      {/* Status cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <StatusCard
-          title="Foundation"
-          statusField="Foundation_Status"
-          dateField="Foundation_Completed_Date"
-          rows={visibleRows}
-          onUpdate={updateField}
-          selectedPier={selectedPier}
-          canEdit={canEdit}
-        />
-        <StatusCard
-          title="Pier"
-          statusField="Pier_Status"
-          dateField="Pier_Completed_Date"
-          rows={visibleRows}
-          onUpdate={updateField}
-          selectedPier={selectedPier}
-          canEdit={canEdit}
-        />
-        <StatusCard
-          title="Pier Cap"
-          statusField="PierCap_Status"
-          dateField="PierCap_Completed_Date"
-          rows={visibleRows}
-          onUpdate={updateField}
-          selectedPier={selectedPier}
-          canEdit={canEdit}
-        />
-      </div>
+      {/* Content area */}
+      {selectedPier ? (
+        <>
+          {/* Status cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <StatusCard
+              title="Foundation"
+              statusField="Foundation_Status"
+              dateField="Foundation_Completed_Date"
+              rows={visibleRows}
+              onUpdate={updateField}
+              selectedPier={selectedPier}
+              canEdit={canEdit}
+            />
+            <StatusCard
+              title="Pier"
+              statusField="Pier_Status"
+              dateField="Pier_Completed_Date"
+              rows={visibleRows}
+              onUpdate={updateField}
+              selectedPier={selectedPier}
+              canEdit={canEdit}
+            />
+            <StatusCard
+              title="Pier Cap"
+              statusField="PierCap_Status"
+              dateField="PierCap_Completed_Date"
+              rows={visibleRows}
+              onUpdate={updateField}
+              selectedPier={selectedPier}
+              canEdit={canEdit}
+            />
+          </div>
 
-      {/* Segment table */}
-      <SegmentTable rows={visibleRows} onUpdate={updateField} canEdit={canEdit} />
+          {/* Segment table */}
+          <SegmentTable rows={visibleRows} onUpdate={updateField} canEdit={canEdit} />
+        </>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-24 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">
+          <Search size={48} className="mb-4 opacity-50" />
+          <p className="text-lg font-medium">Please search and select a Pier ID to view data.</p>
+        </div>
+      )}
 
       {/* Completed preview */}
       {completedRows.length > 0 && (

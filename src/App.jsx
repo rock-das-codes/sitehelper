@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3, ArrowRight, ArrowLeft, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { SignInButton, SignUpButton, UserButton, SignOutButton, useUser } from '@clerk/react';
+import { SignInButton, SignUpButton, UserButton, SignOutButton, useUser, useOrganization } from '@clerk/react';
 
 import { toCanvas, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
@@ -222,7 +222,14 @@ const CustomUserMenu = () => {
 }
 
 export default function BridgeDashboard() {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
+  const { organization } = useOrganization();
+
+  // Get current user's role in the organization
+  const userOrgRole = user?.organizationMemberships?.find(
+    (m) => m.organization?.id === organization?.id
+  )?.role;
+  const canEdit = userOrgRole && userOrgRole !== 'org:member';
   const [data, setData] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selected, setSelected] = useState(null);
@@ -659,14 +666,16 @@ export default function BridgeDashboard() {
         </div>
       )}
       {isSignedIn && (
-        <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100 relative">
-          <div className="absolute top-4 right-4 z-[100] lg:fixed">
+        <div className="p-0 bg-slate-50 min-h-screen font-sans selection:bg-blue-100 relative flex flex-col">
+          <div className="flex justify-end items-center px-4 pt-4 pb-2 z-[100] w-full bg-slate-50">
             <CustomUserMenu />
-            <Link to="/data-entry" className="ml-4 px-3 py-1 bg-[#004b88] text-white rounded hover:bg-blue-800 transition-colors text-sm">Data Entry</Link>
+            {canEdit && (
+              <Link to="/data-entry" className="ml-4 px-3 py-1 bg-[#004b88] text-white rounded hover:bg-blue-800 transition-colors text-sm">Data Entry</Link>
+            )}
           </div>
 
       {/* Schematic Header */}
-      <div className="w-full bg-white text-[#004b88] sticky top-0 z-50 shadow-lg border-2 border-[#004b88] rounded-2xl mt-2">
+      <div className="w-full bg-white text-[#004b88] sticky top-0 z-50 shadow-lg border-2 border-[#004b88] rounded-2xl">
   <div className="px-3 lg:px-6 py-2 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
     
     {/* Col 1: Logo & Version */}

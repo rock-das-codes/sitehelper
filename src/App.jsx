@@ -80,13 +80,24 @@ const getCompletedPortalPierCount = (row) => {
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
-  const s = dStr.trim();
+  const s = dStr.toString().trim();
   
+  // Excel Serial Date (e.g. 45000)
+  if (/^\d+$/.test(s)) {
+    const serial = parseInt(s, 10);
+    // Use UTC to prevent daylight saving time shifts
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + serial);
+    return new Date(excelEpoch.getUTCFullYear(), excelEpoch.getUTCMonth(), excelEpoch.getUTCDate());
+  }
+
+  // YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const parts = s.split('-');
     return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
   }
 
+  // Handle DD/MM/YYYY or MM/DD/YYYY
   const parts = s.split(/[-/.]/);
   if (parts.length === 3) {
     let p0 = parseInt(parts[0], 10);
@@ -94,26 +105,31 @@ const parseDate = (dStr) => {
     let p2 = parts[2];
     
     if (!isNaN(p0) && !isNaN(p1)) {
-      if (p2.length === 4) {
-        let year = parseInt(p2, 10);
+      if (p2.length === 4 || (p2.length === 2 && !isNaN(parseInt(p2, 10)))) {
+        let year = p2.length === 4 ? parseInt(p2, 10) : 2000 + parseInt(p2, 10);
         let day = p0;
         let month = p1;
-        if (month > 12) {
+        
+        // Auto-detect based on values > 12
+        if (p0 > 12) {
+          // p0 is > 12, so it MUST be the day (DD/MM/YYYY)
+          day = p0;
+          month = p1;
+        } else if (p1 > 12) {
+          // p1 is > 12, so it MUST be the day (MM/DD/YYYY)
           day = p1;
           month = p0;
-        }
-        return new Date(year, month - 1, day);
-      } else if (p2.length === 2 && !isNaN(parseInt(p2, 10))) {
-        let year = 2000 + parseInt(p2, 10);
-        let day = p0;
-        let month = p1;
-        if (month > 12) {
-          day = p1;
-          month = p0;
+        } else {
+          // Both <= 12. 
+          // Defaulting to DD/MM/YYYY (day = p0, month = p1) 
+          // because the user's Google Sheet is formatted as DD/MM/YYYY.
+          day = p0;
+          month = p1;
         }
         return new Date(year, month - 1, day);
       }
     } else if (parts[0].length === 4) {
+      // YYYY/MM/DD
       let year = parseInt(parts[0], 10);
       let month = parseInt(parts[1], 10);
       let day = parseInt(parts[2], 10);
@@ -121,16 +137,10 @@ const parseDate = (dStr) => {
     }
   }
 
+  // Fallback to native parsing
   const d = new Date(s);
   if (!isNaN(d)) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  }
-
-  if (/^\d+$/.test(s)) {
-    const serial = parseInt(s, 10);
-    const excelEpoch = new Date(1899, 11, 30);
-    const dateFromExcel = new Date(excelEpoch.getTime() + serial * 86400000);
-    return new Date(dateFromExcel.getFullYear(), dateFromExcel.getMonth(), dateFromExcel.getDate());
   }
   
   return null;

@@ -97,13 +97,22 @@ const parseDate = (dStr) => {
     return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
   }
 
-  // Handle DD/MM/YYYY or MM/DD/YYYY
+  // Handle formats like DD/MM/YYYY, MM/DD/YYYY, or DD-MMM-YY
   const parts = s.split(/[-/.]/);
   if (parts.length === 3) {
     let p0 = parseInt(parts[0], 10);
-    let p1 = parseInt(parts[1], 10);
     let p2 = parts[2];
     
+    // Check if middle part is a month abbreviation (e.g., "Apr")
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const monthIndex = monthNames.findIndex(m => parts[1].toLowerCase().startsWith(m));
+    
+    if (monthIndex !== -1 && !isNaN(p0)) {
+      let year = p2.length === 4 ? parseInt(p2, 10) : 2000 + parseInt(p2, 10);
+      return new Date(year, monthIndex, p0);
+    }
+    
+    let p1 = parseInt(parts[1], 10);
     if (!isNaN(p0) && !isNaN(p1)) {
       if (p2.length === 4 || (p2.length === 2 && !isNaN(parseInt(p2, 10)))) {
         let year = p2.length === 4 ? parseInt(p2, 10) : 2000 + parseInt(p2, 10);

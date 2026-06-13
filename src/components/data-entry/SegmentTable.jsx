@@ -6,26 +6,35 @@ const STATUS_OPTIONS = ['Not Started', 'In Progress', 'Completed'];
 const formatDateForInput = (dStr) => {
   if (!dStr) return '';
   const s = String(dStr).trim();
+  
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.substring(0, 10);
   
   const parts = s.split(/[-/.]/);
   if (parts.length === 3) {
     let p0 = parseInt(parts[0], 10);
-    let p1 = parseInt(parts[1], 10);
     let p2 = parts[2];
     
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const monthIndex = monthNames.findIndex(m => parts[1].toLowerCase().startsWith(m));
+    
+    if (monthIndex !== -1 && !isNaN(p0)) {
+      let year = p2.length === 4 ? parseInt(p2, 10) : 2000 + parseInt(p2, 10);
+      return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(p0).padStart(2, '0')}`;
+    }
+    
+    let p1 = parseInt(parts[1], 10);
     if (!isNaN(p0) && !isNaN(p1)) {
-      if (p2.length === 4) {
-        let year = p2;
+      if (p2.length === 4 || (p2.length === 2 && !isNaN(parseInt(p2, 10)))) {
+        let year = p2.length === 4 ? p2 : 2000 + parseInt(p2, 10);
         let day = p0;
         let month = p1;
-        if (month > 12) { day = p1; month = p0; }
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      } else if (p2.length === 2 && !isNaN(parseInt(p2, 10))) {
-        let year = 2000 + parseInt(p2, 10);
-        let day = p0;
-        let month = p1;
-        if (month > 12) { day = p1; month = p0; }
+        if (p0 > 12) {
+          day = p0; month = p1;
+        } else if (p1 > 12) {
+          day = p1; month = p0;
+        } else {
+          day = p0; month = p1;
+        }
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     } else if (parts[0].length === 4) {
@@ -35,9 +44,9 @@ const formatDateForInput = (dStr) => {
 
   if (/^\d+$/.test(s)) {
     const serial = parseInt(s, 10);
-    const excelEpoch = new Date(1899, 11, 30);
-    const d = new Date(excelEpoch.getTime() + serial * 86400000);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    epoch.setUTCDate(epoch.getUTCDate() + serial);
+    return `${epoch.getUTCFullYear()}-${String(epoch.getUTCMonth() + 1).padStart(2, '0')}-${String(epoch.getUTCDate()).padStart(2, '0')}`;
   }
 
   const d = new Date(s);
@@ -46,6 +55,15 @@ const formatDateForInput = (dStr) => {
   }
   
   return s.split('T')[0];
+};
+
+const formatDateForSave = (dStr) => {
+  if (!dStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+    const parts = dStr.split('-');
+    return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+  }
+  return dStr;
 };
 
 export default function SegmentTable({ rows, onUpdate, canEdit = true }) {
@@ -57,8 +75,14 @@ export default function SegmentTable({ rows, onUpdate, canEdit = true }) {
 
   const handleChange = (pierId, segNum, field, value) => {
     if (!canEdit) return; // Prevent changes if not editable
+    
+    let finalValue = value;
+    if (field.includes('Date') && finalValue) {
+      finalValue = formatDateForSave(finalValue);
+    }
+    
     const key = `S${String(segNum).padStart(2, '0')}_${field}`;
-    onUpdate(pierId, key, value);
+    onUpdate(pierId, key, finalValue);
 
     // If status changed and it's not completed, clear the date
     if ((field === 'Casting_Status' || field === 'Erection_Status') && value.toLowerCase() !== 'completed') {

@@ -13,11 +13,16 @@ const formatValueForCsv = (key, val) => {
     const day = String(val.getUTCDate()).padStart(2, '0');
     const month = String(val.getUTCMonth() + 1).padStart(2, '0');
     const year = val.getUTCFullYear();
-    return `${day}-${month}-${year}`;
+    return `${year}-${month}-${day}`;
   }
   
   if (val && typeof val === 'string' && key.toLowerCase().includes('date')) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+      return val;
+    }
+    
+    // Convert DD-MM-YYYY to YYYY-MM-DD
+    if (/^\d{2}-\d{2}-\d{4}$/.test(val)) {
       const parts = val.split('-');
       return `${parts[2]}-${parts[1]}-${parts[0]}`;
     }
@@ -30,7 +35,7 @@ const formatValueForCsv = (key, val) => {
       const day = parseInt(parts[2], 10);
       const year = parseInt(parts[3], 10);
       if (mIdx !== -1 && !isNaN(day) && !isNaN(year)) {
-        return `${String(day).padStart(2, '0')}-${String(mIdx + 1).padStart(2, '0')}-${year}`;
+        return `${year}-${String(mIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     }
   }

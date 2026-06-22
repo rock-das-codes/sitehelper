@@ -107,11 +107,7 @@ export default function StatusCard({ title, statusField, dateField, rows, onUpda
 
   const handleDateChange = (e) => {
     if (!isEditable) return;
-    let newDate = e.target.value;
-    if (newDate && /^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
-      const parts = newDate.split('-');
-      newDate = `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert to DD-MM-YYYY
-    }
+    const newDate = e.target.value;
     rows.forEach((row) => {
       onUpdate(row['Pier ID'], dateField, newDate);
     });

@@ -74,12 +74,7 @@ const formatDateForInput = (dStr) => {
 };
 
 const formatDateForSave = (dStr) => {
-  if (!dStr) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
-    const parts = dStr.split('-');
-    return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
-  }
-  return dStr;
+  return dStr; // Keep YYYY-MM-DD format
 };
 
 export default function SegmentTable({ rows, onUpdate, canEdit = true }) {

@@ -6,7 +6,23 @@ const STATUS_OPTIONS = ['Not Started', 'In Progress', 'Completed'];
 
 const formatDateForInput = (dStr) => {
   if (!dStr) return '';
+  if (dStr instanceof Date) {
+    if (isNaN(dStr.getTime())) return '';
+    return `${dStr.getUTCFullYear()}-${String(dStr.getUTCMonth() + 1).padStart(2, '0')}-${String(dStr.getUTCDate()).padStart(2, '0')}`;
+  }
   const s = String(dStr).trim();
+  
+  // Try parsing long date string (e.g. "Fri May 02 2025 23:59:50 GMT+0530")
+  const partsLong = s.split(/\s+/);
+  if (partsLong.length >= 4 && isNaN(Number(partsLong[0])) && isNaN(Number(partsLong[1]))) {
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const mIdx = monthNames.findIndex(m => partsLong[1].toLowerCase().startsWith(m));
+    const day = parseInt(partsLong[2], 10);
+    const year = parseInt(partsLong[3], 10);
+    if (mIdx !== -1 && !isNaN(day) && !isNaN(year)) {
+      return `${year}-${String(mIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
   
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.substring(0, 10);
   

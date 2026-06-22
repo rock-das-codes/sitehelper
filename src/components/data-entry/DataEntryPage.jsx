@@ -1,23 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { ArrowLeft, ArrowRight, Save, X, Search, Loader2 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { ArrowLeft, ArrowRight, Save, X, Search, Loader2, FileDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SignOutButton, useOrganization, useUser } from '@clerk/react';
 import StatusCard from './StatusCard';
 import SegmentTable from './SegmentTable';
+
+const formatValueForCsv = (key, val) => {
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    const day = String(val.getUTCDate()).padStart(2, '0');
+    const month = String(val.getUTCMonth() + 1).padStart(2, '0');
+    const year = val.getUTCFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  
+  if (val && typeof val === 'string' && key.toLowerCase().includes('date')) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+      const parts = val.split('-');
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    
+    // Parse long date string (e.g. "Fri May 02 2025 23:59:50 GMT+0530")
+    const parts = val.trim().split(/\s+/);
+    if (parts.length >= 4 && isNaN(Number(parts[0])) && isNaN(Number(parts[1]))) {
+      const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+      const mIdx = monthNames.findIndex(m => parts[1].toLowerCase().startsWith(m));
+      const day = parseInt(parts[2], 10);
+      const year = parseInt(parts[3], 10);
+      if (mIdx !== -1 && !isNaN(day) && !isNaN(year)) {
+        return `${String(day).padStart(2, '0')}-${String(mIdx + 1).padStart(2, '0')}-${year}`;
+      }
+    }
+  }
+
+  const sVal = val === null || val === undefined ? '' : String(val);
+  if (sVal.includes(',') || sVal.includes('"')) {
+    return `"${sVal.replace(/"/g, '""')}"`;
+  }
+  return sVal;
+};
 
 // Helper to convert rows back to CSV string
 const rowsToCsv = (rows) => {
   if (!rows.length) return '';
   const headers = Object.keys(rows[0]);
   const csvLines = rows.map((row) =>
-    headers.map((h) => {
-      const val = row[h];
-      // Escape commas and quotes
-      if (typeof val === 'string' && (val.includes(',') || val.includes('"')))
-        return `"${val.replace(/"/g, '""')}"`;
-      return val ?? '';
-    }).join(',')
+    headers.map((h) => formatValueForCsv(h, row[h])).join(',')
   );
   return [headers.join(','), ...csvLines].join('\n');
 };
@@ -51,21 +81,76 @@ export default function DataEntryPage({ onClose }) {
     const url = urlMap[section];
     if (!url) return;
     const cacheBuster = `&t=${new Date().getTime()}`;
-    const finalUrl = url.includes('?') ? `${url}${cacheBuster}` : `${url}?${cacheBuster}`;
+    // Convert OneDrive sharing / embed link to direct download link
+    const getDirectUrl = (u) => {
+      let finalUrl = u.trim();
+      if (finalUrl.includes('onedrive.live.com/embed')) {
+        finalUrl = finalUrl.replace('/embed', '/download');
+      }
+      return finalUrl;
+    };
+    const finalUrl = getDirectUrl(url).includes('?') ? `${getDirectUrl(url)}${cacheBuster}` : `${getDirectUrl(url)}?${cacheBuster}`;
+
+    const hasLongDates = (rows) => {
+      return rows.some(row => 
+        Object.keys(row).some(key => {
+          if (!key.toLowerCase().includes('date')) return false;
+          const val = row[key];
+          if (!val || typeof val !== 'string') return false;
+          const parts = val.trim().split(/\s+/);
+          return parts.length >= 4 && isNaN(Number(parts[0])) && isNaN(Number(parts[1]));
+        })
+      );
+    };
+
     fetch(finalUrl, {
       cache: 'no-store',
       headers: { Pragma: 'no-cache', 'Cache-Control': 'no-cache' },
     })
-      .then((r) => r.text())
-      .then((txt) => {
-        Papa.parse(txt, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (res) => {
-            setRawData(res.data);
-            setEditedData(res.data.map((r) => ({ ...r })));
-          },
-        });
+      .then((r) => r.arrayBuffer())
+      .then((buffer) => {
+        const arr = new Uint8Array(buffer);
+        const isExcel = arr[0] === 0x50 && arr[1] === 0x4B;
+
+        if (isExcel) {
+          try {
+            const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+            let sheetName = wb.SheetNames.find(name => name.trim().toUpperCase() === section.trim().toUpperCase());
+            if (!sheetName) {
+              sheetName = wb.SheetNames.find(name => name.trim().toUpperCase().includes(section.trim().toUpperCase()));
+            }
+            if (!sheetName) {
+              sheetName = wb.SheetNames[0];
+            }
+            const ws = wb.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+            setRawData(jsonData);
+            setEditedData(jsonData.map((r) => ({ ...r })));
+            if (hasLongDates(jsonData)) {
+              setIsDirty(true);
+            }
+          } catch (err) {
+            console.error("Excel parse error:", err);
+          }
+        } else {
+          try {
+            const decoder = new TextDecoder('utf-8');
+            const text = decoder.decode(buffer);
+            Papa.parse(text, {
+              header: true,
+              skipEmptyLines: true,
+              complete: (res) => {
+                setRawData(res.data);
+                setEditedData(res.data.map((r) => ({ ...r })));
+                if (hasLongDates(res.data)) {
+                  setIsDirty(true);
+                }
+              },
+            });
+          } catch (err) {
+            console.error("CSV parse error:", err);
+          }
+        }
       })
       .catch(console.error);
   }, [section]);
@@ -103,6 +188,18 @@ export default function DataEntryPage({ onClose }) {
       alert('Failed to save data. Check console for details.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDownloadExcel = () => {
+    try {
+      const ws = XLSX.utils.json_to_sheet(editedData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, section);
+      XLSX.writeFile(wb, `Section_${section}_Edited.xlsx`);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to generate Excel file');
     }
   };
 
@@ -147,14 +244,24 @@ export default function DataEntryPage({ onClose }) {
           <ArrowLeft size={16} /> Back to Dashboard
         </Link>
         <h2 className="text-xl font-black text-[#004b88]">Data Entry – Section {section}</h2>
-        <button 
-          onClick={handleSave} 
-          disabled={!isDirty || !canEdit || isSaving} 
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${(isDirty && canEdit) ? 'bg-[#004b88] text-white hover:bg-blue-800 shadow-md hover:-translate-y-0.5' : 'bg-gray-300 text-gray-500 cursor-not-allowed'} ${isSaving ? 'opacity-70 !cursor-wait hover:translate-y-0' : ''}`}
-        >
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {isSaving ? 'Saving...' : 'Save All'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleDownloadExcel} 
+            disabled={editedData.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-[#22c55e] text-white hover:bg-green-700 shadow-md hover:-translate-y-0.5 transition-all disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed disabled:translate-y-0"
+          >
+            <FileDown size={16} />
+            Download Excel
+          </button>
+          <button 
+            onClick={handleSave} 
+            disabled={!isDirty || !canEdit || isSaving} 
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${(isDirty && canEdit) ? 'bg-[#004b88] text-white hover:bg-blue-800 shadow-md hover:-translate-y-0.5' : 'bg-gray-300 text-gray-500 cursor-not-allowed'} ${isSaving ? 'opacity-70 !cursor-wait hover:translate-y-0' : ''}`}
+          >
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {isSaving ? 'Saving...' : 'Save All'}
+          </button>
+        </div>
       </div>
 
       {/* Section picker */}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { Calendar, CheckCircle2, Search, Anchor, Hammer, HardHat, Building2, Columns2, FileDown, Loader2, Printer, Menu, X, BarChart3, ArrowRight, ArrowLeft, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SignInButton, SignUpButton, UserButton, SignOutButton, useUser, useOrganization } from '@clerk/react';
@@ -78,9 +79,40 @@ const getCompletedPortalPierCount = (row) => {
   return Number.isFinite(num) && num > 0 ? num : 0;
 };
 
+const getDirectDownloadUrl = (url) => {
+  if (!url) return '';
+  let finalUrl = url.trim();
+  // Convert OneDrive sharing / embed link to direct download link
+  if (finalUrl.includes('onedrive.live.com/embed')) {
+    finalUrl = finalUrl.replace('/embed', '/download');
+  }
+  return finalUrl;
+};
+
+const parseLongDateString = (s) => {
+  const parts = s.trim().split(/\s+/);
+  if (parts.length >= 4 && isNaN(Number(parts[0])) && isNaN(Number(parts[1]))) {
+    const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const mIdx = monthNames.findIndex(m => parts[1].toLowerCase().startsWith(m));
+    const day = parseInt(parts[2], 10);
+    const year = parseInt(parts[3], 10);
+    if (mIdx !== -1 && !isNaN(day) && !isNaN(year)) {
+      return new Date(year, mIdx, day);
+    }
+  }
+  return null;
+};
+
 const parseDate = (dStr) => {
   if (!dStr) return null;
+  if (dStr instanceof Date) {
+    if (isNaN(dStr.getTime())) return null;
+    return new Date(dStr.getUTCFullYear(), dStr.getUTCMonth(), dStr.getUTCDate());
+  }
   const s = dStr.toString().trim();
+  
+  const longDate = parseLongDateString(s);
+  if (longDate) return longDate;
   
   // Excel Serial Date (e.g. 45000)
   if (/^\d+$/.test(s)) {
@@ -271,31 +303,34 @@ export default function BridgeDashboard() {
     if (!PM_SHEET_URL) return; // no URL configured → use hardcoded fallback
     setIsPmLoading(true);
     const cacheBuster = `&t=${new Date().getTime()}`;
-    const pmUrl = PM_SHEET_URL.includes('?') ? `${PM_SHEET_URL}${cacheBuster}` : `${PM_SHEET_URL}?${cacheBuster}`;
-    Papa.parse(pmUrl, {
-      download: true,
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        // Build pmsBySection from rows like: { Section, "Project Manager", "Pier ID Range" }
+    const rawPmUrl = getDirectDownloadUrl(PM_SHEET_URL);
+    const pmUrl = rawPmUrl.includes('?') ? `${rawPmUrl}${cacheBuster}` : `${rawPmUrl}?${cacheBuster}`;
+
+    fetch(pmUrl, { 
+      cache: 'no-store',
+      headers: {
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache'
+      }
+    })
+    .then(response => response.arrayBuffer())
+    .then(buffer => {
+      const arr = new Uint8Array(buffer);
+      const isExcel = arr[0] === 0x50 && arr[1] === 0x4B;
+
+      const processPmData = (rows) => {
         const bySection = { S1: [], S2: [], S3: [], S4: [] };
-        results.data.forEach((row, idx) => {
+        rows.forEach((row, idx) => {
           let section = (row['Section'] || row['SECTION'] || '').trim().toUpperCase();
-          // Normalize: "1" -> "S1", "2" -> "S2", etc.
           if (section && !section.startsWith('S') && /^\d+$/.test(section)) {
             section = `S${section}`;
           }
-          
           const pmName  = (row['Project Manager'] || row['PROJECT MANAGER'] || row['Project Manage'] || '').trim();
           const range   = (row['Pier ID Range'] || row['PIER ID RANGE'] || '').trim();
-          
           if (!section || !pmName || !range) return;
-          
-          // Parse range: supports "21P01-21P40", "21P01 to 21P40", "21P01 – 21P40"
           const parts = range.split(/\s*(?:to|-|–|—|TO)\s*/i).map(s => s.trim());
           const startPier = parts[0] || '';
           const endPier   = parts[1] || parts[0] || '';
-          
           if (!bySection[section]) bySection[section] = [];
           bySection[section].push({
             id: `${section}-PM${idx + 1}`,
@@ -306,8 +341,39 @@ export default function BridgeDashboard() {
         });
         setPmsBySection(bySection);
         setIsPmLoading(false);
-      },
-      error: () => setIsPmLoading(false),
+      };
+
+      if (isExcel) {
+        try {
+          const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+          let sheetName = wb.SheetNames.find(name => {
+            const n = name.trim().toUpperCase();
+            return n === "PM" || n === "PROJECT MANAGER" || n === "PROJECT MANAGERS";
+          });
+          if (!sheetName) sheetName = wb.SheetNames[0];
+          const ws = wb.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+          processPmData(jsonData);
+        } catch (err) {
+          console.error("Excel PM parse error:", err);
+          setIsPmLoading(false);
+        }
+      } else {
+        const decoder = new TextDecoder('utf-8');
+        const text = decoder.decode(buffer);
+        Papa.parse(text, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            processPmData(results.data);
+          },
+          error: () => setIsPmLoading(false),
+        });
+      }
+    })
+    .catch((err) => {
+      console.error("PM fetch error:", err);
+      setIsPmLoading(false);
     });
   }, []);
 
@@ -318,7 +384,8 @@ export default function BridgeDashboard() {
     if (url) {
       setIsLoading(true);
       const cacheBuster = `&t=${new Date().getTime()}`;
-      const finalUrl = url.includes('?') ? `${url}${cacheBuster}` : `${url}?${cacheBuster}`;
+      const rawUrl = getDirectDownloadUrl(url);
+      const finalUrl = rawUrl.includes('?') ? `${rawUrl}${cacheBuster}` : `${rawUrl}?${cacheBuster}`;
       
       // Force bypass cache with fetch
       fetch(finalUrl, { 
@@ -328,28 +395,57 @@ export default function BridgeDashboard() {
           'Cache-Control': 'no-cache'
         }
       })
-      .then(response => response.text())
-      .then(text => {
-        Papa.parse(text, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            setData(results.data);
+      .then(response => response.arrayBuffer())
+      .then(buffer => {
+        const arr = new Uint8Array(buffer);
+        const isExcel = arr[0] === 0x50 && arr[1] === 0x4B;
+
+        if (isExcel) {
+          try {
+            const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+            let sheetName = wb.SheetNames.find(name => name.trim().toUpperCase() === activeSection.trim().toUpperCase());
+            if (!sheetName) {
+              sheetName = wb.SheetNames.find(name => name.trim().toUpperCase().includes(activeSection.trim().toUpperCase()));
+            }
+            if (!sheetName) {
+              sheetName = wb.SheetNames[0];
+            }
+            const ws = wb.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+            setData(jsonData);
             setLastUpdated(new Date());
             setIsLoading(false);
-          },
-          error: (err) => {
-            console.error("Parsing error:", err);
+          } catch (err) {
+            console.error("Excel parse error:", err);
             setIsLoading(false);
           }
-        });
+        } else {
+          try {
+            const decoder = new TextDecoder('utf-8');
+            const text = decoder.decode(buffer);
+            Papa.parse(text, {
+              header: true,
+              skipEmptyLines: true,
+              complete: (results) => {
+                setData(results.data);
+                setLastUpdated(new Date());
+                setIsLoading(false);
+              },
+              error: (err) => {
+                console.error("Parsing error:", err);
+                setIsLoading(false);
+              }
+            });
+          } catch (err) {
+            console.error("CSV parse error:", err);
+            setIsLoading(false);
+          }
+        }
       })
       .catch(err => {
         console.error("Fetch error:", err);
         setIsLoading(false);
       });
-    } else {
-      setData([]);
     }
   }, [activeSection]);
 

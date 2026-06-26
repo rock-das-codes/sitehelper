@@ -89,6 +89,52 @@ const getDirectDownloadUrl = (url) => {
   return finalUrl;
 };
 
+const fetchSectionData = async (section) => {
+  const url = SECTION_URLS[section];
+  if (!url) return [];
+  const cacheBuster = `&t=${new Date().getTime()}`;
+  const rawUrl = getDirectDownloadUrl(url);
+  const finalUrl = rawUrl.includes('?') ? `${rawUrl}${cacheBuster}` : `${rawUrl}?${cacheBuster}`;
+
+  const response = await fetch(finalUrl, { 
+    cache: 'no-store',
+    headers: {
+      'Pragma': 'no-cache',
+      'Cache-Control': 'no-cache'
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch section ${section}: ${response.statusText}`);
+  }
+  const buffer = await response.arrayBuffer();
+  const arr = new Uint8Array(buffer);
+  const isExcel = arr[0] === 0x50 && arr[1] === 0x4B;
+
+  if (isExcel) {
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+    let sheetName = wb.SheetNames.find(name => name.trim().toUpperCase() === section.trim().toUpperCase());
+    if (!sheetName) {
+      sheetName = wb.SheetNames.find(name => name.trim().toUpperCase().includes(section.trim().toUpperCase()));
+    }
+    if (!sheetName) {
+      sheetName = wb.SheetNames[0];
+    }
+    const ws = wb.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+  } else {
+    const decoder = new TextDecoder('utf-8');
+    const text = decoder.decode(buffer);
+    return new Promise((resolve, reject) => {
+      Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => resolve(results.data),
+        error: (err) => reject(err)
+      });
+    });
+  }
+};
+
 const parseLongDateString = (s) => {
   const parts = s.trim().split(/\s+/);
   if (parts.length >= 4 && isNaN(Number(parts[0])) && isNaN(Number(parts[1]))) {
@@ -281,7 +327,13 @@ export default function BridgeDashboard() {
     (m) => m.organization?.id === organization?.id
   )?.role;
   const canEdit = userOrgRole && userOrgRole !== 'org:member';
-  const [data, setData] = useState([]);
+  const [sectionsData, setSectionsData] = useState({
+    S1: null,
+    S2: null,
+    S3: null,
+    S4: null
+  });
+  const [isC3, setIsC3] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selected, setSelected] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -296,6 +348,16 @@ export default function BridgeDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const [isLoading, setIsLoading] = useState(false);
+
+  // Derived state for the active dataset
+  const data = isC3 
+    ? [
+        ...(sectionsData.S1 || []),
+        ...(sectionsData.S2 || []),
+        ...(sectionsData.S3 || []),
+        ...(sectionsData.S4 || [])
+      ]
+    : (sectionsData[activeSection] || []);
 
 
   // Fetch PM mapping from sheet on mount (once)
@@ -377,77 +439,49 @@ export default function BridgeDashboard() {
     });
   }, []);
 
-  // Fetch section data when activeSection changes
+  // Fetch section data when activeSection changes or when isC3 is toggled
   useEffect(() => {
-    setSelectedPM(""); // Reset PM selection when switching section
-    const url = SECTION_URLS[activeSection];
-    if (url) {
-      setIsLoading(true);
-      const cacheBuster = `&t=${new Date().getTime()}`;
-      const rawUrl = getDirectDownloadUrl(url);
-      const finalUrl = rawUrl.includes('?') ? `${rawUrl}${cacheBuster}` : `${rawUrl}?${cacheBuster}`;
-      
-      // Force bypass cache with fetch
-      fetch(finalUrl, { 
-        cache: 'no-store',
-        headers: {
-          'Pragma': 'no-cache',
-          'Cache-Control': 'no-cache'
-        }
-      })
-      .then(response => response.arrayBuffer())
-      .then(buffer => {
-        const arr = new Uint8Array(buffer);
-        const isExcel = arr[0] === 0x50 && arr[1] === 0x4B;
-
-        if (isExcel) {
-          try {
-            const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
-            let sheetName = wb.SheetNames.find(name => name.trim().toUpperCase() === activeSection.trim().toUpperCase());
-            if (!sheetName) {
-              sheetName = wb.SheetNames.find(name => name.trim().toUpperCase().includes(activeSection.trim().toUpperCase()));
-            }
-            if (!sheetName) {
-              sheetName = wb.SheetNames[0];
-            }
-            const ws = wb.Sheets[sheetName];
-            const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
-            setData(jsonData);
+    setSelectedPM(""); // Reset PM selection when switching section/mode
+    
+    if (isC3) {
+      // Load all 4 sections S1, S2, S3, S4
+      const sectionsToFetch = ['S1', 'S2', 'S3', 'S4'].filter(sec => !sectionsData[sec]);
+      if (sectionsToFetch.length > 0) {
+        setIsLoading(true);
+        Promise.all(sectionsToFetch.map(sec => fetchSectionData(sec).then(resData => ({ sec, resData }))))
+          .then(results => {
+            setSectionsData(prev => {
+              const updated = { ...prev };
+              results.forEach(({ sec, resData }) => {
+                updated[sec] = resData;
+              });
+              return updated;
+            });
             setLastUpdated(new Date());
             setIsLoading(false);
-          } catch (err) {
-            console.error("Excel parse error:", err);
+          })
+          .catch(err => {
+            console.error("Error loading C3 data:", err);
             setIsLoading(false);
-          }
-        } else {
-          try {
-            const decoder = new TextDecoder('utf-8');
-            const text = decoder.decode(buffer);
-            Papa.parse(text, {
-              header: true,
-              skipEmptyLines: true,
-              complete: (results) => {
-                setData(results.data);
-                setLastUpdated(new Date());
-                setIsLoading(false);
-              },
-              error: (err) => {
-                console.error("Parsing error:", err);
-                setIsLoading(false);
-              }
-            });
-          } catch (err) {
-            console.error("CSV parse error:", err);
+          });
+      }
+    } else {
+      // Just load activeSection
+      if (!sectionsData[activeSection]) {
+        setIsLoading(true);
+        fetchSectionData(activeSection)
+          .then(resData => {
+            setSectionsData(prev => ({ ...prev, [activeSection]: resData }));
+            setLastUpdated(new Date());
             setIsLoading(false);
-          }
-        }
-      })
-      .catch(err => {
-        console.error("Fetch error:", err);
-        setIsLoading(false);
-      });
+          })
+          .catch(err => {
+            console.error(`Error loading ${activeSection}:`, err);
+            setIsLoading(false);
+          });
+      }
     }
-  }, [activeSection]);
+  }, [activeSection, isC3]);
 
 
   const isInSelectedRange = (dStr) => {
@@ -516,7 +550,7 @@ export default function BridgeDashboard() {
   let pmStartIdx = -1;
   let pmEndIdx = -1;
   let activePM = null;
-  if (selectedPM) {
+  if (selectedPM && !isC3) {
     const pmList = pmsBySection[activeSection] || [];
     activePM = pmList.find(p => p.id === selectedPM);
     if (activePM) {
@@ -823,13 +857,28 @@ export default function BridgeDashboard() {
       {/* Responsive Wrap: Stacks on mobile, rows on desktop */}
       <div className="flex flex-wrap justify-center gap-2 lg:gap-3 w-full">
         
+        {/* C3 Toggle */}
+        <div className="flex flex-col gap-0.5 flex-1 min-w-[75px] max-w-[85px]">
+          <label className="text-[6px] font-bold uppercase ml-1">C3 Package</label>
+          <div 
+            className="flex items-center h-[26px] bg-white border border-[#004b88] rounded px-2 gap-1.5 cursor-pointer select-none" 
+            onClick={() => setIsC3(!isC3)}
+          >
+            <div className={`w-6 h-3 flex items-center rounded-full p-0.5 transition-colors duration-300 ${isC3 ? 'bg-[#004b88]' : 'bg-slate-300'}`}>
+              <div className={`bg-white w-2 h-2 rounded-full shadow-md transform transition-transform duration-300 ${isC3 ? 'translate-x-3' : 'translate-x-0'}`} />
+            </div>
+            <span className="text-[9px] font-black text-[#004b88]">C3</span>
+          </div>
+        </div>
+
         {/* Section Select */}
         <div className="flex flex-col gap-0.5 flex-1 min-w-[100px] max-w-[120px]">
           <label className="text-[6px] font-bold uppercase ml-1">Section</label>
           <select 
             value={activeSection} 
             onChange={(e) => setActiveSection(e.target.value)}
-            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none"
+            disabled={isC3}
+            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none disabled:opacity-50"
             style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px' }}
           >
             <option value="S1">SECTION 1</option>
@@ -844,7 +893,8 @@ export default function BridgeDashboard() {
           <label className="text-[6px] font-bold uppercase ml-1">Navigate LG</label>
           <select 
             onChange={(e) => handleGirderSelect(e.target.value)}
-            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none"
+            disabled={isC3}
+            className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none disabled:opacity-50"
             style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23fb923c\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px' }}
           >
             <option value="">SELECT...</option>
@@ -862,7 +912,7 @@ export default function BridgeDashboard() {
           <select 
             value={selectedPM} 
             onChange={(e) => setSelectedPM(e.target.value)} 
-            disabled={isPmLoading}
+            disabled={isPmLoading || isC3}
             className="bg-white border border-[#004b88] text-[10px] font-black rounded px-2 py-1 outline-none appearance-none disabled:opacity-50"
             style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2322c55e\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px' }}
           >
@@ -1013,7 +1063,7 @@ export default function BridgeDashboard() {
           const predictedSpanIds = new Set();
           filteredData.forEach((r, idx) => {
             const loc = r['Girder_Location_Span_ID'];
-            if (loc && loc.trim() !== '' && loc === r['Span ID']) {
+            if (loc && String(loc).trim() !== '' && String(loc).trim() === String(r['Span ID']).trim()) {
               const type = r['Type']?.toUpperCase().trim();
               if (type === 'SBS' || type === 'FSLM') {
                 const direction = getNormalizedLgDirection(r);
@@ -1035,7 +1085,7 @@ export default function BridgeDashboard() {
             {filteredData.map((row, idx) => {
 
             const girderLoc = row['Girder_Location_Span_ID'];
-            const isGirderHere = girderLoc && girderLoc.trim() !== "" && girderLoc === row['Span ID'];
+            const isGirderHere = girderLoc && String(girderLoc).trim() !== "" && String(girderLoc).trim() === String(row['Span ID']).trim();
             const isPredictedLG = predictedSpanIds.has(row['Span ID']);
             const currentLgDirection = isGirderHere ? getNormalizedLgDirection(row) : null;
             const portalPierCount = getPortalPierCount(row);
